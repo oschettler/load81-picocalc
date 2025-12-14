@@ -1,0 +1,6 @@
+[submodule "extern/load81"]
+	path = extern/load81
+	url = https://github.com/antirez/load81
+[submodule "extern/picocalc-text-start"]
+	path = extern/picocalc-text-start
+	url = https://github.com/BlairLeduc/picocalc-text-starter.git
