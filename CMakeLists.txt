@@ -109,6 +109,7 @@ target_link_libraries(load81_picocalc
     picocalc_drivers
     lua52
     pico_stdlib
+    pico_cyw43_arch_lwip_poll
     hardware_spi
     hardware_i2c
     hardware_gpio

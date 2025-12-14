@@ -12,9 +12,9 @@
 #define MEMP_NUM_TCP_SEG            TCP_SND_QUEUELEN
 #define MEMP_NUM_ALTCP_PCB          MEMP_NUM_TCP_PCB
 #define MEMP_NUM_PBUF               24
-#define LWIP_ALTCP                  1
-#define LWIP_ALTCP_TLS              1
-#define LWIP_ALTCP_TLS_MBEDTLS      1
+#define LWIP_ALTCP                  0
+#define LWIP_ALTCP_TLS              0
+#define LWIP_ALTCP_TLS_MBEDTLS      0
 #define LWIP_DEBUG                  0
 #define LWIP_STATS                  0
 #define MEM_STATS                   0

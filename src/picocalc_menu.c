@@ -6,7 +6,10 @@
 #include "picocalc_framebuffer.h"
 #include "picocalc_graphics.h"
 #include "picocalc_keyboard.h"
+#include "picocalc_wifi.h"
 #include "fat32.h"
+#include <lua.h>
+#include <lauxlib.h>
 
 static MenuItem menu_items[MAX_MENU_ITEMS];
 static int menu_count = 0;
@@ -115,6 +118,21 @@ int menu_select_program(void) {
         /* Draw title */
         g_draw_r = 255; g_draw_g = 255; g_draw_b = 0; g_draw_alpha = 255;
         gfx_draw_string(10, 300, "LOAD81 for PicoCalc", 19);
+        
+        /* Draw WiFi status in top right */
+        const char *wifi_status = wifi_get_status_string();
+        const char *wifi_ip = wifi_get_ip_string();
+        
+        /* If online, show IP address; otherwise show status */
+        if (strcmp(wifi_status, "Online") == 0) {
+            /* Connected - show IP address in green */
+            g_draw_r = 100; g_draw_g = 255; g_draw_b = 100; g_draw_alpha = 255;
+            gfx_draw_string(220, 305, wifi_ip, strlen(wifi_ip));
+        } else {
+            /* Not connected - show status in blue/gray */
+            g_draw_r = 150; g_draw_g = 150; g_draw_b = 255; g_draw_alpha = 255;
+            gfx_draw_string(240, 305, wifi_status, strlen(wifi_status));
+        }
         
         g_draw_r = 200; g_draw_g = 200; g_draw_b = 200; g_draw_alpha = 255;
         gfx_draw_string(10, 280, "Select a program:", 17);

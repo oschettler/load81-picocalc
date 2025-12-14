@@ -6,6 +6,12 @@
 /* Initialize WiFi subsystem */
 void wifi_init(void);
 
+/* Get WiFi status as C string (for display) */
+const char* wifi_get_status_string(void);
+
+/* Get WiFi IP as C string (for display) */
+const char* wifi_get_ip_string(void);
+
 /* Register WiFi Lua bindings */
 void wifi_register_lua(lua_State *L);
 

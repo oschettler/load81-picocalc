@@ -189,6 +189,53 @@ int main(void) {
     /* Show splash screen */
     show_splash();
     
+    /* Execute startup script if it exists */
+    printf("[Startup] Checking for /load81/start.lua...\n");
+    fat32_file_t startup_file;
+    fat32_error_t result = fat32_open(&startup_file, "/load81/start.lua");
+    if (result == FAT32_OK) {
+        printf("[Startup] Found start.lua, executing...\n");
+        
+        /* Get file size */
+        uint32_t file_size = fat32_size(&startup_file);
+        if (file_size > 0 && file_size < 65536) {
+            /* Read startup script */
+            char *startup_code = (char *)malloc(file_size + 1);
+            if (startup_code) {
+                size_t bytes_read = 0;
+                result = fat32_read(&startup_file, startup_code, file_size, &bytes_read);
+                if (result == FAT32_OK) {
+                    startup_code[bytes_read] = '\0';
+                    
+                    /* Create Lua state for startup */
+                    lua_State *startup_lua = lua_init_load81();
+                    if (startup_lua) {
+                        /* Register WiFi and NEX APIs */
+                        wifi_register_lua(startup_lua);
+                        nex_register_lua(startup_lua);
+                        
+                        /* Load and execute startup script */
+                        if (luaL_loadstring(startup_lua, startup_code) == 0) {
+                            if (lua_pcall(startup_lua, 0, 0, 0) != 0) {
+                                printf("[Startup] Error: %s\n", lua_tostring(startup_lua, -1));
+                            } else {
+                                printf("[Startup] Executed successfully\n");
+                            }
+                        } else {
+                            printf("[Startup] Load error: %s\n", lua_tostring(startup_lua, -1));
+                        }
+                        
+                        lua_close_load81(startup_lua);
+                    }
+                }
+                free(startup_code);
+            }
+        }
+        fat32_close(&startup_file);
+    } else {
+        printf("[Startup] No start.lua found (this is normal)\n");
+    }
+    
     /* Main menu loop */
     while (1) {
         /* Initialize menu */
