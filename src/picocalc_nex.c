@@ -7,7 +7,7 @@
 #include <lauxlib.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
+#include "debug.h"
 
 #define NEX_PORT 1900
 #define NEX_TIMEOUT_MS 10000
@@ -27,7 +27,7 @@ typedef struct {
 /* Initialize NEX */
 void nex_init(void) {
     /* NEX protocol initialization */
-    printf("[NEX] Protocol support initialized\n");
+    DEBUG_PRINTF("[NEX] Protocol support initialized\n");
 }
 
 /* TCP connection callback */
@@ -35,13 +35,13 @@ static err_t nex_connected_callback(void *arg, struct tcp_pcb *tpcb, err_t err) 
     nex_connection_t *conn = (nex_connection_t *)arg;
     
     if (err != ERR_OK) {
-        printf("[NEX] Connection failed: %d\n", err);
+        DEBUG_PRINTF("[NEX] Connection failed: %d\n", err);
         conn->error = err;
         conn->complete = true;
         return err;
     }
     
-    printf("[NEX] TCP connected\n");
+    DEBUG_PRINTF("[NEX] TCP connected\n");
     conn->connected = true;
     return ERR_OK;
 }
@@ -63,7 +63,7 @@ static err_t nex_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, 
         size_t new_capacity = new_len + 4096;
         char *new_buffer = realloc(conn->response_buffer, new_capacity);
         if (!new_buffer) {
-            printf("[NEX] Out of memory\n");
+            DEBUG_PRINTF("[NEX] Out of memory\n");
             conn->error = ERR_MEM;
             conn->complete = true;
             pbuf_free(p);
@@ -86,7 +86,7 @@ static err_t nex_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, 
 /* TCP error callback */
 static void nex_error_callback(void *arg, err_t err) {
     nex_connection_t *conn = (nex_connection_t *)arg;
-    printf("[NEX] TCP error: %d\n", err);
+    DEBUG_PRINTF("[NEX] TCP error: %d\n", err);
     conn->error = err;
     conn->complete = true;
 }
@@ -96,18 +96,18 @@ static void nex_dns_callback(const char *name, const ip_addr_t *ipaddr, void *ar
     nex_connection_t *conn = (nex_connection_t *)arg;
     
     if (ipaddr == NULL) {
-        printf("[NEX] DNS resolution failed\n");
+        DEBUG_PRINTF("[NEX] DNS resolution failed\n");
         conn->error = ERR_ARG;
         conn->complete = true;
         return;
     }
     
-    printf("[NEX] Resolved %s to %s\n", name, ipaddr_ntoa(ipaddr));
+    DEBUG_PRINTF("[NEX] Resolved %s to %s\n", name, ipaddr_ntoa(ipaddr));
     
     /* Create TCP connection */
     conn->pcb = tcp_new();
     if (!conn->pcb) {
-        printf("[NEX] Failed to create TCP PCB\n");
+        DEBUG_PRINTF("[NEX] Failed to create TCP PCB\n");
         conn->error = ERR_MEM;
         conn->complete = true;
         return;
@@ -119,7 +119,7 @@ static void nex_dns_callback(const char *name, const ip_addr_t *ipaddr, void *ar
     
     err_t err = tcp_connect(conn->pcb, ipaddr, NEX_PORT, nex_connected_callback);
     if (err != ERR_OK) {
-        printf("[NEX] TCP connect failed: %d\n", err);
+        DEBUG_PRINTF("[NEX] TCP connect failed: %d\n", err);
         conn->error = err;
         conn->complete = true;
         tcp_close(conn->pcb);
@@ -157,7 +157,7 @@ static int lua_nex_load(lua_State *L) {
         strcpy(path, "/");
     }
     
-    printf("[NEX] Loading nex://%s%s\n", hostname, path);
+    DEBUG_PRINTF("[NEX] Loading nex://%s%s\n", hostname, path);
     
     /* Initialize connection state */
     nex_connection_t conn = {0};
@@ -177,7 +177,7 @@ static int lua_nex_load(lua_State *L) {
         /* Already cached */
         nex_dns_callback(hostname, &resolved_addr, &conn);
     } else if (dns_err != ERR_INPROGRESS) {
-        printf("[NEX] DNS lookup failed: %d\n", dns_err);
+        DEBUG_PRINTF("[NEX] DNS lookup failed: %d\n", dns_err);
         free(conn.response_buffer);
         lua_pushnil(L);
         lua_pushstring(L, "DNS lookup failed");
@@ -190,7 +190,7 @@ static int lua_nex_load(lua_State *L) {
         cyw43_arch_poll();
         sleep_ms(10);
         if (absolute_time_diff_us(start_time, get_absolute_time()) > NEX_TIMEOUT_MS * 1000) {
-            printf("[NEX] Connection timeout\n");
+            DEBUG_PRINTF("[NEX] Connection timeout\n");
             if (conn.pcb) {
                 tcp_close(conn.pcb);
             }
@@ -215,7 +215,7 @@ static int lua_nex_load(lua_State *L) {
     
     err_t write_err = tcp_write(conn.pcb, request, strlen(request), TCP_WRITE_FLAG_COPY);
     if (write_err != ERR_OK) {
-        printf("[NEX] Failed to send request: %d\n", write_err);
+        DEBUG_PRINTF("[NEX] Failed to send request: %d\n", write_err);
         tcp_close(conn.pcb);
         free(conn.response_buffer);
         lua_pushnil(L);
@@ -224,7 +224,7 @@ static int lua_nex_load(lua_State *L) {
     }
     
     tcp_output(conn.pcb);
-    printf("[NEX] Request sent, waiting for response...\n");
+    DEBUG_PRINTF("[NEX] Request sent, waiting for response...\n");
     
     /* Wait for response */
     conn.complete = false;
@@ -233,7 +233,7 @@ static int lua_nex_load(lua_State *L) {
         cyw43_arch_poll();
         sleep_ms(10);
         if (absolute_time_diff_us(start_time, get_absolute_time()) > NEX_TIMEOUT_MS * 1000) {
-            printf("[NEX] Response timeout\n");
+            DEBUG_PRINTF("[NEX] Response timeout\n");
             tcp_close(conn.pcb);
             free(conn.response_buffer);
             lua_pushnil(L);
@@ -247,7 +247,7 @@ static int lua_nex_load(lua_State *L) {
     /* Return response */
     if (conn.response_len > 0) {
         conn.response_buffer[conn.response_len] = '\0';
-        printf("[NEX] Received %zu bytes\n", conn.response_len);
+        DEBUG_PRINTF("[NEX] Received %zu bytes\n", conn.response_len);
         lua_pushlstring(L, conn.response_buffer, conn.response_len);
         free(conn.response_buffer);
         return 1;

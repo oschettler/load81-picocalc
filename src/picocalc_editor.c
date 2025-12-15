@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "picocalc_editor.h"
 #include "picocalc_framebuffer.h"
 #include "picocalc_graphics.h"
@@ -5,7 +6,7 @@
 #include "keyboard.h"
 #include "fat32.h"
 #include "pico/stdlib.h"
-#include <stdio.h>
+#include "debug.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -403,25 +404,25 @@ static int editorOpen(char *filename) {
     free(E.filename);
     E.filename = strdup(filename);
     
-    printf("[Editor] Attempting to open file: '%s'\n", filename);
+    DEBUG_PRINTF("[Editor] Attempting to open file: '%s'\n", filename);
     result = fat32_open(&file, filename);
     if (result != FAT32_OK) {
         /* No such file, add a template */
-        printf("[Editor] File not found (error: %s), using template\n", fat32_error_string(result));
+        DEBUG_PRINTF("[Editor] File not found (error: %s), using template\n", fat32_error_string(result));
         int j = 0;
         while(editorTemplate[j])
             editorInsertRow(E.numrows, editorTemplate[j++]);
         return 1;
     }
     
-    printf("[Editor] File opened successfully\n");
+    DEBUG_PRINTF("[Editor] File opened successfully\n");
     
     /* Get file size */
     uint32_t file_size = fat32_size(&file);
-    printf("[Editor] File size: %lu bytes\n", (unsigned long)file_size);
+    DEBUG_PRINTF("[Editor] File size: %lu bytes\n", (unsigned long)file_size);
     
     if (file_size > 65536) {
-        printf("[Editor] File too large\n");
+        DEBUG_PRINTF("[Editor] File too large\n");
         fat32_close(&file);
         int j = 0;
         while(editorTemplate[j])
@@ -432,7 +433,7 @@ static int editorOpen(char *filename) {
     /* Allocate buffer for entire file */
     char *buffer = (char *)malloc(file_size + 1);
     if (!buffer) {
-        printf("[Editor] Failed to allocate memory\n");
+        DEBUG_PRINTF("[Editor] Failed to allocate memory\n");
         fat32_close(&file);
         int j = 0;
         while(editorTemplate[j])
@@ -444,7 +445,7 @@ static int editorOpen(char *filename) {
     size_t bytes_read = 0;
     result = fat32_read(&file, buffer, file_size, &bytes_read);
     if (result != FAT32_OK) {
-        printf("[Editor] Error reading file: %s\n", fat32_error_string(result));
+        DEBUG_PRINTF("[Editor] Error reading file: %s\n", fat32_error_string(result));
         free(buffer);
         fat32_close(&file);
         int j = 0;
@@ -454,7 +455,7 @@ static int editorOpen(char *filename) {
     }
     
     buffer[bytes_read] = '\0';
-    printf("[Editor] Read %zu bytes\n", bytes_read);
+    DEBUG_PRINTF("[Editor] Read %zu bytes\n", bytes_read);
     
     /* Parse buffer line by line */
     char *line_start = buffer;
@@ -475,7 +476,7 @@ static int editorOpen(char *filename) {
         }
     }
     
-    printf("[Editor] Parsed %d lines\n", line_count);
+    DEBUG_PRINTF("[Editor] Parsed %d lines\n", line_count);
     
     free(buffer);
     fat32_close(&file);
@@ -493,20 +494,20 @@ static int editorSave(char *filename) {
     result = fat32_open(&file, filename);
     if (result != FAT32_OK) {
         /* Try to create the file */
-        printf("[Editor] Creating new file: %s\n", filename);
+        DEBUG_PRINTF("[Editor] Creating new file: %s\n", filename);
     }
     
     /* Write the buffer */
     size_t bytes_written = 0;
     result = fat32_write(&file, buf, len, &bytes_written);
     if (result != FAT32_OK) {
-        printf("[Editor] Error writing file: %s\n", fat32_error_string(result));
+        DEBUG_PRINTF("[Editor] Error writing file: %s\n", fat32_error_string(result));
         free(buf);
         fat32_close(&file);
         return 1;
     }
     
-    printf("[Editor] Wrote %zu bytes to file\n", bytes_written);
+    DEBUG_PRINTF("[Editor] Wrote %zu bytes to file\n", bytes_written);
     fat32_close(&file);
     free(buf);
     E.dirty = 0;

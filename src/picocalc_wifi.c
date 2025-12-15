@@ -4,7 +4,7 @@
 #include <lua.h>
 #include <lauxlib.h>
 #include <string.h>
-#include <stdio.h>
+#include "debug.h"
 #include <stdbool.h>
 
 static bool wifi_initialized = false;
@@ -13,10 +13,10 @@ static char wifi_ip[16] = "0.0.0.0";
 
 /* Initialize WiFi */
 void wifi_init(void) {
-    printf("[WiFi] Initializing CYW43...\n");
+    DEBUG_PRINTF("[WiFi] Initializing CYW43...\n");
     
     if (cyw43_arch_init()) {
-        printf("[WiFi] Failed to initialize CYW43\n");
+        DEBUG_PRINTF("[WiFi] Failed to initialize CYW43\n");
         wifi_initialized = false;
         return;
     }
@@ -26,7 +26,7 @@ void wifi_init(void) {
     /* Set country code for regulatory compliance */
     cyw43_wifi_set_up(&cyw43_state, CYW43_ITF_STA, true, CYW43_COUNTRY_WORLDWIDE);
     
-    printf("[WiFi] CYW43 initialized in station mode\n");
+    DEBUG_PRINTF("[WiFi] CYW43 initialized in station mode\n");
     wifi_initialized = true;
     wifi_connected = false;
 }
@@ -72,22 +72,22 @@ static int lua_wifi_connect(lua_State *L) {
     const char *password = luaL_checkstring(L, 2);
     
     if (!wifi_initialized) {
-        printf("[WiFi] Not initialized\n");
+        DEBUG_PRINTF("[WiFi] Not initialized\n");
         lua_pushboolean(L, 0);
         return 1;
     }
     
-    printf("[WiFi] ============ WiFi Connection Debug ============\n");
-    printf("[WiFi] SSID: '%s'\n", ssid);
-    printf("[WiFi] Password length: %d characters\n", (int)strlen(password));
-    printf("[WiFi] Auth method: WPA2-AES-PSK\n");
-    printf("[WiFi] Timeout: 30000ms (30 seconds)\n");
+    DEBUG_PRINTF("[WiFi] ============ WiFi Connection Debug ============\n");
+    DEBUG_PRINTF("[WiFi] SSID: '%s'\n", ssid);
+    DEBUG_PRINTF("[WiFi] Password length: %d characters\n", (int)strlen(password));
+    DEBUG_PRINTF("[WiFi] Auth method: WPA2-AES-PSK\n");
+    DEBUG_PRINTF("[WiFi] Timeout: 30000ms (30 seconds)\n");
     
     /* Check current link status before connecting */
     int pre_link_status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
-    printf("[WiFi] Pre-connection link status: %d\n", pre_link_status);
+    DEBUG_PRINTF("[WiFi] Pre-connection link status: %d\n", pre_link_status);
     
-    printf("[WiFi] Starting connection attempt...\n");
+    DEBUG_PRINTF("[WiFi] Starting connection attempt...\n");
     uint32_t start_time = to_ms_since_boot(get_absolute_time());
     
     /* Blocking connect with timeout */
@@ -96,71 +96,71 @@ static int lua_wifi_connect(lua_State *L) {
                                                      30000);
     
     uint32_t elapsed_time = to_ms_since_boot(get_absolute_time()) - start_time;
-    printf("[WiFi] Connection attempt completed in %lu ms\n", (unsigned long)elapsed_time);
-    printf("[WiFi] Result code: %d\n", result);
-    printf("[WiFi] Result meaning: %s\n", wifi_error_string(result));
+    DEBUG_PRINTF("[WiFi] Connection attempt completed in %lu ms\n", (unsigned long)elapsed_time);
+    DEBUG_PRINTF("[WiFi] Result code: %d\n", result);
+    DEBUG_PRINTF("[WiFi] Result meaning: %s\n", wifi_error_string(result));
     
     /* Check final link status */
     int post_link_status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
-    printf("[WiFi] Post-connection link status: %d ", post_link_status);
+    DEBUG_PRINTF("[WiFi] Post-connection link status: %d ", post_link_status);
     switch (post_link_status) {
         case CYW43_LINK_DOWN:
-            printf("(LINK_DOWN - not connected)\n");
+            DEBUG_PRINTF("(LINK_DOWN - not connected)\n");
             break;
         case CYW43_LINK_JOIN:
-            printf("(LINK_JOIN - joining network)\n");
+            DEBUG_PRINTF("(LINK_JOIN - joining network)\n");
             break;
         case CYW43_LINK_NOIP:
-            printf("(LINK_NOIP - connected but no IP)\n");
+            DEBUG_PRINTF("(LINK_NOIP - connected but no IP)\n");
             break;
         case CYW43_LINK_UP:
-            printf("(LINK_UP - fully connected)\n");
+            DEBUG_PRINTF("(LINK_UP - fully connected)\n");
             break;
         case CYW43_LINK_FAIL:
-            printf("(LINK_FAIL - connection failed)\n");
+            DEBUG_PRINTF("(LINK_FAIL - connection failed)\n");
             break;
         case CYW43_LINK_NONET:
-            printf("(LINK_NONET - network not found)\n");
+            DEBUG_PRINTF("(LINK_NONET - network not found)\n");
             break;
         case CYW43_LINK_BADAUTH:
-            printf("(LINK_BADAUTH - authentication failed)\n");
+            DEBUG_PRINTF("(LINK_BADAUTH - authentication failed)\n");
             break;
         default:
-            printf("(Unknown: %d)\n", post_link_status);
+            DEBUG_PRINTF("(Unknown: %d)\n", post_link_status);
             break;
     }
     
     if (result == 0) {
         wifi_connected = true;
         update_ip_string();
-        printf("[WiFi] ✓ Successfully connected!\n");
-        printf("[WiFi] IP Address: %s\n", wifi_ip);
-        printf("[WiFi] =============================================\n");
+        DEBUG_PRINTF("[WiFi] ✓ Successfully connected!\n");
+        DEBUG_PRINTF("[WiFi] IP Address: %s\n", wifi_ip);
+        DEBUG_PRINTF("[WiFi] =============================================\n");
         lua_pushboolean(L, 1);
     } else {
         wifi_connected = false;
         strcpy(wifi_ip, "0.0.0.0");
-        printf("[WiFi] ✗ Connection FAILED\n");
+        DEBUG_PRINTF("[WiFi] ✗ Connection FAILED\n");
         
         /* Additional diagnostics */
         if (result == -7) {
-            printf("[WiFi] DIAGNOSIS: Timeout suggests one of:\n");
-            printf("[WiFi]   - Network is out of range (weak signal)\n");
-            printf("[WiFi]   - SSID is incorrect or hidden\n");
-            printf("[WiFi]   - Router not responding to connection\n");
-            printf("[WiFi]   - WiFi hardware issue\n");
+            DEBUG_PRINTF("[WiFi] DIAGNOSIS: Timeout suggests one of:\n");
+            DEBUG_PRINTF("[WiFi]   - Network is out of range (weak signal)\n");
+            DEBUG_PRINTF("[WiFi]   - SSID is incorrect or hidden\n");
+            DEBUG_PRINTF("[WiFi]   - Router not responding to connection\n");
+            DEBUG_PRINTF("[WiFi]   - WiFi hardware issue\n");
         } else if (post_link_status == CYW43_LINK_BADAUTH) {
-            printf("[WiFi] DIAGNOSIS: Authentication failed\n");
-            printf("[WiFi]   - Incorrect password\n");
-            printf("[WiFi]   - Unsupported security type\n");
+            DEBUG_PRINTF("[WiFi] DIAGNOSIS: Authentication failed\n");
+            DEBUG_PRINTF("[WiFi]   - Incorrect password\n");
+            DEBUG_PRINTF("[WiFi]   - Unsupported security type\n");
         } else if (post_link_status == CYW43_LINK_NONET) {
-            printf("[WiFi] DIAGNOSIS: Network not found\n");
-            printf("[WiFi]   - SSID may be incorrect\n");
-            printf("[WiFi]   - Network may be hidden\n");
-            printf("[WiFi]   - Router may be off\n");
+            DEBUG_PRINTF("[WiFi] DIAGNOSIS: Network not found\n");
+            DEBUG_PRINTF("[WiFi]   - SSID may be incorrect\n");
+            DEBUG_PRINTF("[WiFi]   - Network may be hidden\n");
+            DEBUG_PRINTF("[WiFi]   - Router may be off\n");
         }
         
-        printf("[WiFi] =============================================\n");
+        DEBUG_PRINTF("[WiFi] =============================================\n");
         lua_pushboolean(L, 0);
     }
     
@@ -170,7 +170,7 @@ static int lua_wifi_connect(lua_State *L) {
 /* Lua: wifi.disconnect() */
 static int lua_wifi_disconnect(lua_State *L) {
     if (wifi_initialized && wifi_connected) {
-        printf("[WiFi] Disconnecting...\n");
+        DEBUG_PRINTF("[WiFi] Disconnecting...\n");
         cyw43_arch_disable_sta_mode();
         cyw43_arch_enable_sta_mode();
     }
@@ -237,29 +237,29 @@ static int lua_wifi_ip(lua_State *L) {
 /* Lua: wifi.scan() - scan for available networks */
 static int lua_wifi_scan(lua_State *L) {
     if (!wifi_initialized) {
-        printf("[WiFi] Not initialized for scan\n");
+        DEBUG_PRINTF("[WiFi] Not initialized for scan\n");
         lua_newtable(L);
         return 1;
     }
     
-    printf("[WiFi] ============ WiFi Network Scan ============\n");
-    printf("[WiFi] Starting network scan...\n");
+    DEBUG_PRINTF("[WiFi] ============ WiFi Network Scan ============\n");
+    DEBUG_PRINTF("[WiFi] Starting network scan...\n");
     
     cyw43_wifi_scan_options_t scan_options = {0};
     int result = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, NULL);
     
     if (result != 0) {
-        printf("[WiFi] Scan failed with error: %d\n", result);
+        DEBUG_PRINTF("[WiFi] Scan failed with error: %d\n", result);
         lua_newtable(L);
         return 1;
     }
     
-    printf("[WiFi] Scan initiated, waiting for results...\n");
+    DEBUG_PRINTF("[WiFi] Scan initiated, waiting for results...\n");
     sleep_ms(3000);  /* Wait for scan to complete */
     
-    printf("[WiFi] Scan completed\n");
-    printf("[WiFi] Note: Detailed scan results require callback implementation\n");
-    printf("[WiFi] =============================================\n");
+    DEBUG_PRINTF("[WiFi] Scan completed\n");
+    DEBUG_PRINTF("[WiFi] Note: Detailed scan results require callback implementation\n");
+    DEBUG_PRINTF("[WiFi] =============================================\n");
     
     /* Return empty table for now - full implementation would need scan callback */
     lua_newtable(L);
@@ -268,43 +268,43 @@ static int lua_wifi_scan(lua_State *L) {
 
 /* Lua: wifi.debug_info() - print detailed WiFi debug information */
 static int lua_wifi_debug_info(lua_State *L) {
-    printf("[WiFi] ========== WiFi Debug Information ==========\n");
-    printf("[WiFi] Initialized: %s\n", wifi_initialized ? "YES" : "NO");
-    printf("[WiFi] Connected: %s\n", wifi_connected ? "YES" : "NO");
-    printf("[WiFi] IP Address: %s\n", wifi_ip);
+    DEBUG_PRINTF("[WiFi] ========== WiFi Debug Information ==========\n");
+    DEBUG_PRINTF("[WiFi] Initialized: %s\n", wifi_initialized ? "YES" : "NO");
+    DEBUG_PRINTF("[WiFi] Connected: %s\n", wifi_connected ? "YES" : "NO");
+    DEBUG_PRINTF("[WiFi] IP Address: %s\n", wifi_ip);
     
     if (wifi_initialized) {
         int link_status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
-        printf("[WiFi] Link Status: %d ", link_status);
+        DEBUG_PRINTF("[WiFi] Link Status: %d ", link_status);
         switch (link_status) {
-            case CYW43_LINK_DOWN: printf("(DOWN)\n"); break;
-            case CYW43_LINK_JOIN: printf("(JOIN)\n"); break;
-            case CYW43_LINK_NOIP: printf("(NOIP)\n"); break;
-            case CYW43_LINK_UP: printf("(UP)\n"); break;
-            case CYW43_LINK_FAIL: printf("(FAIL)\n"); break;
-            case CYW43_LINK_NONET: printf("(NONET)\n"); break;
-            case CYW43_LINK_BADAUTH: printf("(BADAUTH)\n"); break;
-            default: printf("(UNKNOWN)\n"); break;
+            case CYW43_LINK_DOWN: DEBUG_PRINTF("(DOWN)\n"); break;
+            case CYW43_LINK_JOIN: DEBUG_PRINTF("(JOIN)\n"); break;
+            case CYW43_LINK_NOIP: DEBUG_PRINTF("(NOIP)\n"); break;
+            case CYW43_LINK_UP: DEBUG_PRINTF("(UP)\n"); break;
+            case CYW43_LINK_FAIL: DEBUG_PRINTF("(FAIL)\n"); break;
+            case CYW43_LINK_NONET: DEBUG_PRINTF("(NONET)\n"); break;
+            case CYW43_LINK_BADAUTH: DEBUG_PRINTF("(BADAUTH)\n"); break;
+            default: DEBUG_PRINTF("(UNKNOWN)\n"); break;
         }
         
         /* Get MAC address */
         uint8_t mac[6];
         cyw43_wifi_get_mac(&cyw43_state, CYW43_ITF_STA, mac);
-        printf("[WiFi] MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+        DEBUG_PRINTF("[WiFi] MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         
         /* Check netif status */
         struct netif *netif = netif_default;
         if (netif) {
-            printf("[WiFi] Network Interface: ACTIVE\n");
-            printf("[WiFi]   - Interface up: %s\n", netif_is_up(netif) ? "YES" : "NO");
-            printf("[WiFi]   - Link up: %s\n", netif_is_link_up(netif) ? "YES" : "NO");
+            DEBUG_PRINTF("[WiFi] Network Interface: ACTIVE\n");
+            DEBUG_PRINTF("[WiFi]   - Interface up: %s\n", netif_is_up(netif) ? "YES" : "NO");
+            DEBUG_PRINTF("[WiFi]   - Link up: %s\n", netif_is_link_up(netif) ? "YES" : "NO");
         } else {
-            printf("[WiFi] Network Interface: NOT AVAILABLE\n");
+            DEBUG_PRINTF("[WiFi] Network Interface: NOT AVAILABLE\n");
         }
     }
     
-    printf("[WiFi] =============================================\n");
+    DEBUG_PRINTF("[WiFi] =============================================\n");
     return 0;
 }
 

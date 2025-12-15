@@ -1,7 +1,7 @@
 #include "picocalc_repl.h"
 #include "picocalc_keyboard.h"
 #include "pico/stdlib.h"
-#include <stdio.h>
+#include "debug.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -18,11 +18,11 @@ static int lua_fat32_is_mounted(lua_State *L) {
 
 static int lua_fat32_list_dir(lua_State *L) {
     const char *path = luaL_checkstring(L, 1);
-    printf("Listing directory: %s\n", path);
+    DEBUG_PRINTF("Listing directory: %s\n", path);
     
     fat32_file_t dir;
     fat32_error_t result = fat32_open(&dir, path);
-    printf("fat32_open returned: %d (%s)\n", result, fat32_error_string(result));
+    DEBUG_PRINTF("fat32_open returned: %d (%s)\n", result, fat32_error_string(result));
     
     if (result != FAT32_OK) {
         lua_pushnil(L);
@@ -35,7 +35,7 @@ static int lua_fat32_list_dir(lua_State *L) {
     fat32_entry_t entry;
     
     while (fat32_dir_read(&dir, &entry) == FAT32_OK) {
-        printf("  %s (size=%lu, attr=0x%02X)\n", entry.filename, 
+        DEBUG_PRINTF("  %s (size=%lu, attr=0x%02X)\n", entry.filename, 
                (unsigned long)entry.size, entry.attr);
         lua_newtable(L);
         lua_pushstring(L, entry.filename);
@@ -52,11 +52,11 @@ static int lua_fat32_list_dir(lua_State *L) {
 }
 
 static int lua_sd_reinit(lua_State *L) {
-    printf("Reinitializing SD card...\n");
+    DEBUG_PRINTF("Reinitializing SD card...\n");
     /* Unmount and remount to force reinitialization */
     fat32_unmount();
     fat32_error_t result = fat32_mount();
-    printf("fat32_mount: %d (%s)\n", result, fat32_error_string(result));
+    DEBUG_PRINTF("fat32_mount: %d (%s)\n", result, fat32_error_string(result));
     lua_pushinteger(L, result);
     return 1;
 }
@@ -67,7 +67,7 @@ static int lua_sd_reinit(lua_State *L) {
 static int read_line(char *buffer, int max_len) {
     int pos = 0;
     
-    printf("> ");
+    DEBUG_PRINTF("> ");
     fflush(stdout);
     
     while (pos < max_len - 1) {
@@ -87,7 +87,7 @@ static int read_line(char *buffer, int max_len) {
         }
         
         if (c == '\r' || c == '\n') {
-            printf("\n");
+            DEBUG_PRINTF("\n");
             buffer[pos] = '\0';
             return pos;
         }
@@ -95,7 +95,7 @@ static int read_line(char *buffer, int max_len) {
         if (c == '\b' || c == 127) { /* Backspace */
             if (pos > 0) {
                 pos--;
-                printf("\b \b");
+                DEBUG_PRINTF("\b \b");
                 fflush(stdout);
             }
             continue;
@@ -116,10 +116,10 @@ static int read_line(char *buffer, int max_len) {
 void repl_run(lua_State *L) {
     char line[REPL_LINE_MAX];
     
-    printf("\n=== LOAD81 Lua REPL ===\n");
-    printf("Type Lua commands and press ENTER\n");
-    printf("Press ESC on PicoCalc keyboard to exit\n");
-    printf("Try: =fat32_is_mounted(), =fat32_list_dir(\"/\"), =sd_reinit()\n\n");
+    DEBUG_PRINTF("\n=== LOAD81 Lua REPL ===\n");
+    DEBUG_PRINTF("Type Lua commands and press ENTER\n");
+    DEBUG_PRINTF("Press ESC on PicoCalc keyboard to exit\n");
+    DEBUG_PRINTF("Try: =fat32_is_mounted(), =fat32_list_dir(\"/\"), =sd_reinit()\n\n");
     
     /* Register SD card functions for debugging */
     lua_pushcfunction(L, lua_fat32_is_mounted);
@@ -135,7 +135,7 @@ void repl_run(lua_State *L) {
         int len = read_line(line, REPL_LINE_MAX);
         
         if (len < 0) {
-            printf("\nExiting REPL...\n");
+            DEBUG_PRINTF("\nExiting REPL...\n");
             break;
         }
         
@@ -163,7 +163,7 @@ void repl_run(lua_State *L) {
         if (status != 0) {
             /* Error */
             const char *msg = lua_tostring(L, -1);
-            printf("Error: %s\n", msg ? msg : "unknown error");
+            DEBUG_PRINTF("Error: %s\n", msg ? msg : "unknown error");
             lua_pop(L, 1);
         } else {
             /* Print results */
@@ -171,15 +171,15 @@ void repl_run(lua_State *L) {
             if (nresults > 0) {
                 for (int i = 1; i <= nresults; i++) {
                     if (lua_isstring(L, i)) {
-                        printf("%s\n", lua_tostring(L, i));
+                        DEBUG_PRINTF("%s\n", lua_tostring(L, i));
                     } else if (lua_isboolean(L, i)) {
-                        printf("%s\n", lua_toboolean(L, i) ? "true" : "false");
+                        DEBUG_PRINTF("%s\n", lua_toboolean(L, i) ? "true" : "false");
                     } else if (lua_isnumber(L, i)) {
-                        printf("%g\n", lua_tonumber(L, i));
+                        DEBUG_PRINTF("%g\n", lua_tonumber(L, i));
                     } else if (lua_isnil(L, i)) {
-                        printf("nil\n");
+                        DEBUG_PRINTF("nil\n");
                     } else {
-                        printf("%s\n", luaL_typename(L, i));
+                        DEBUG_PRINTF("%s\n", luaL_typename(L, i));
                     }
                 }
                 lua_pop(L, nresults);

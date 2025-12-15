@@ -3,11 +3,13 @@
  * Main application entry point
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
+
+/* Debug output support */
+#include "debug.h"
 
 /* PicoCalc drivers */
 #include "lcd.h"
@@ -41,8 +43,8 @@ void user_interrupt(void) {
 
 /* Initialize hardware */
 static bool init_hardware(void) {
-    /* Initialize Pico stdlib */
-    stdio_init_all();
+    /* Initialize Pico stdlib (only for debug output) */
+    DEBUG_INIT();
     
     /* Initialize southbridge (power, keyboard interface) */
     sb_init();
@@ -58,7 +60,7 @@ static bool init_hardware(void) {
     fb_init();
     
     /* Initialize SD card subsystem - mounting happens lazily when files are accessed */
-    printf("Initializing SD card subsystem...\n");
+    DEBUG_PRINTF("Initializing SD card subsystem...\n");
     fat32_init();
     
     /* Initialize WiFi (non-blocking) */
@@ -72,14 +74,14 @@ static bool init_hardware(void) {
 
 /* Show splash screen */
 static void show_splash(void) {
-    printf("LOAD81: Starting splash screen\n");
-    printf("FB_WIDTH=%d, FB_HEIGHT=%d\n", FB_WIDTH, FB_HEIGHT);
+    DEBUG_PRINTF("LOAD81: Starting splash screen\n");
+    DEBUG_PRINTF("FB_WIDTH=%d, FB_HEIGHT=%d\n", FB_WIDTH, FB_HEIGHT);
     
     fb_fill_background(0, 0, 50);
-    printf("Background filled\n");
+    DEBUG_PRINTF("Background filled\n");
     
     g_draw_r = 255; g_draw_g = 255; g_draw_b = 0; g_draw_alpha = 255;
-    printf("Drawing text at (60, 180)\n");
+    DEBUG_PRINTF("Drawing text at (60, 180)\n");
     gfx_draw_string(60, 180, "LOAD81 for PicoCalc", 19);
     
     g_draw_r = 200; g_draw_g = 200; g_draw_b = 200; g_draw_alpha = 255;
@@ -89,7 +91,7 @@ static void show_splash(void) {
     gfx_draw_string(40, 120, "A Lua Fantasy Console", 21);
     gfx_draw_string(40, 100, "for Clockwork PicoCalc", 22);
     
-    printf("Presenting framebuffer\n");
+    DEBUG_PRINTF("Presenting framebuffer\n");
     fb_present();
     sleep_ms(2000);
 }
@@ -176,25 +178,25 @@ static void program_loop(lua_State *L) {
 /* Main application */
 int main(void) {
     /* Initialize hardware */
-    printf("\n\n=== LOAD81 for PicoCalc Starting ===\n");
+    DEBUG_PRINTF("\n\n=== LOAD81 for PicoCalc Starting ===\n");
     if (!init_hardware()) {
-        printf("Hardware initialization failed!\n");
+        DEBUG_PRINTF("Hardware initialization failed!\n");
         /* Blink LED to indicate error */
         while (1) {
             sleep_ms(500);
         }
     }
-    printf("Hardware initialized successfully\n");
+    DEBUG_PRINTF("Hardware initialized successfully\n");
     
     /* Show splash screen */
     show_splash();
     
     /* Execute startup script if it exists */
-    printf("[Startup] Checking for /load81/start.lua...\n");
+    DEBUG_PRINTF("[Startup] Checking for /load81/start.lua...\n");
     fat32_file_t startup_file;
     fat32_error_t result = fat32_open(&startup_file, "/load81/start.lua");
     if (result == FAT32_OK) {
-        printf("[Startup] Found start.lua, executing...\n");
+        DEBUG_PRINTF("[Startup] Found start.lua, executing...\n");
         
         /* Get file size */
         uint32_t file_size = fat32_size(&startup_file);
@@ -217,12 +219,12 @@ int main(void) {
                         /* Load and execute startup script */
                         if (luaL_loadstring(startup_lua, startup_code) == 0) {
                             if (lua_pcall(startup_lua, 0, 0, 0) != 0) {
-                                printf("[Startup] Error: %s\n", lua_tostring(startup_lua, -1));
+                                DEBUG_PRINTF("[Startup] Error: %s\n", lua_tostring(startup_lua, -1));
                             } else {
-                                printf("[Startup] Executed successfully\n");
+                                DEBUG_PRINTF("[Startup] Executed successfully\n");
                             }
                         } else {
-                            printf("[Startup] Load error: %s\n", lua_tostring(startup_lua, -1));
+                            DEBUG_PRINTF("[Startup] Load error: %s\n", lua_tostring(startup_lua, -1));
                         }
                         
                         lua_close_load81(startup_lua);
@@ -233,7 +235,7 @@ int main(void) {
         }
         fat32_close(&startup_file);
     } else {
-        printf("[Startup] No start.lua found (this is normal)\n");
+        DEBUG_PRINTF("[Startup] No start.lua found (this is normal)\n");
     }
     
     /* Main menu loop */

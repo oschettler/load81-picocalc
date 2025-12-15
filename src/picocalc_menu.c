@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <stddef.h>
+#include "debug.h"
 #include "picocalc_menu.h"
 #include "picocalc_framebuffer.h"
 #include "picocalc_graphics.h"
@@ -24,22 +24,22 @@ void menu_init(void) {
 int menu_load_programs(void) {
     menu_count = 0;
     
-    printf("Loading programs from /load81/ directory...\n");
+    DEBUG_PRINTF("Loading programs from /load81/ directory...\n");
     
     /* Try to open the /load81 directory - FAT32 will mount automatically if needed */
     fat32_file_t dir;
     fat32_entry_t entry;
     fat32_error_t result = fat32_open(&dir, "/load81");
-    printf("fat32_open(\"/load81\") returned: %d (%s)\n", result, fat32_error_string(result));
+    DEBUG_PRINTF("fat32_open(\"/load81\") returned: %d (%s)\n", result, fat32_error_string(result));
     
     if (result == FAT32_OK) {
-        printf("Directory opened successfully, reading files...\n");
+        DEBUG_PRINTF("Directory opened successfully, reading files...\n");
         
         /* Read directory entries - must check filename[0] for end of directory */
         do {
             result = fat32_dir_read(&dir, &entry);
             if (result != FAT32_OK) {
-                printf("Error reading directory: %s\n", fat32_error_string(result));
+                DEBUG_PRINTF("Error reading directory: %s\n", fat32_error_string(result));
                 break;
             }
             
@@ -48,32 +48,32 @@ int menu_load_programs(void) {
                 break;
             }
             
-            printf("Found file: '%s' (attr=0x%02X, size=%lu)\n", 
+            DEBUG_PRINTF("Found file: '%s' (attr=0x%02X, size=%lu)\n", 
                    entry.filename, entry.attr, (unsigned long)entry.size);
             
             /* Skip directories */
             if (entry.attr & FAT32_ATTR_DIRECTORY) {
-                printf("  -> Skipping (directory)\n");
+                DEBUG_PRINTF("  -> Skipping (directory)\n");
                 continue;
             }
             
             /* Check if it's a .lua file */
             int len = strlen(entry.filename);
             if (len > 4 && strcmp(&entry.filename[len-4], ".lua") == 0) {
-                printf("  -> Adding to menu\n");
+                DEBUG_PRINTF("  -> Adding to menu\n");
                 if (menu_count < MAX_MENU_ITEMS) {
                     strncpy(menu_items[menu_count].filename, entry.filename, MAX_FILENAME_LEN - 1);
                     strncpy(menu_items[menu_count].display_name, entry.filename, MAX_FILENAME_LEN - 1);
                     menu_count++;
                 }
             } else {
-                printf("  -> Skipping (not .lua)\n");
+                DEBUG_PRINTF("  -> Skipping (not .lua)\n");
             }
         } while (entry.filename[0] && menu_count < MAX_MENU_ITEMS);
         
         fat32_close(&dir);
     } else {
-        printf("Could not open /load81/ directory, error: %d (%s)\n", result, fat32_error_string(result));
+        DEBUG_PRINTF("Could not open /load81/ directory, error: %d (%s)\n", result, fat32_error_string(result));
     }
     
     /* Always add REPL as first option */
@@ -89,15 +89,15 @@ int menu_load_programs(void) {
     
     /* If no files found, add default */
     if (menu_count == 1) {
-        printf("No .lua files found, adding default program\n");
+        DEBUG_PRINTF("No .lua files found, adding default program\n");
         strncpy(menu_items[1].filename, "default", MAX_FILENAME_LEN - 1);
         strncpy(menu_items[1].display_name, "Default Program", MAX_FILENAME_LEN - 1);
         menu_count = 2;
     }
     
-    printf("Found %d program(s) total:\n", menu_count);
+    DEBUG_PRINTF("Found %d program(s) total:\n", menu_count);
     for (int i = 0; i < menu_count; i++) {
-        printf("  [%d] %s (%s)\n", i, menu_items[i].display_name, menu_items[i].filename);
+        DEBUG_PRINTF("  [%d] %s (%s)\n", i, menu_items[i].display_name, menu_items[i].filename);
     }
     
     return menu_count;
@@ -167,7 +167,7 @@ int menu_select_program(void) {
         char key = kb_wait_key();
         
         /* Debug: print key code */
-        printf("Key pressed: 0x%02X ('%c')\n", (unsigned char)key, 
+        DEBUG_PRINTF("Key pressed: 0x%02X ('%c')\n", (unsigned char)key, 
                (key >= 32 && key < 127) ? key : '?');
         
         /* Handle input */
@@ -228,22 +228,22 @@ char *menu_load_file(const char *filename) {
     /* Build full path */
     char fullpath[256];
     snprintf(fullpath, sizeof(fullpath), "/load81/%s", filename);
-    printf("Loading file: %s\n", fullpath);
+    DEBUG_PRINTF("Loading file: %s\n", fullpath);
     
     /* Open the file */
     fat32_file_t file;
     fat32_error_t result = fat32_open(&file, fullpath);
     if (result != FAT32_OK) {
-        printf("Error opening file: %s\n", fat32_error_string(result));
+        DEBUG_PRINTF("Error opening file: %s\n", fat32_error_string(result));
         return strdup(default_prog);
     }
     
     /* Get file size */
     uint32_t file_size = fat32_size(&file);
-    printf("File size: %lu bytes\n", (unsigned long)file_size);
+    DEBUG_PRINTF("File size: %lu bytes\n", (unsigned long)file_size);
     
     if (file_size == 0 || file_size > 65536) {
-        printf("Invalid file size\n");
+        DEBUG_PRINTF("Invalid file size\n");
         fat32_close(&file);
         return strdup(default_prog);
     }
@@ -251,7 +251,7 @@ char *menu_load_file(const char *filename) {
     /* Allocate buffer for file content */
     char *buffer = (char *)malloc(file_size + 1);
     if (!buffer) {
-        printf("Failed to allocate memory\n");
+        DEBUG_PRINTF("Failed to allocate memory\n");
         fat32_close(&file);
         return strdup(default_prog);
     }
@@ -260,13 +260,13 @@ char *menu_load_file(const char *filename) {
     size_t bytes_read = 0;
     result = fat32_read(&file, buffer, file_size, &bytes_read);
     if (result != FAT32_OK) {
-        printf("Error reading file: %s\n", fat32_error_string(result));
+        DEBUG_PRINTF("Error reading file: %s\n", fat32_error_string(result));
         free(buffer);
         fat32_close(&file);
         return strdup(default_prog);
     }
     
-    printf("Read %zu bytes from file\n", bytes_read);
+    DEBUG_PRINTF("Read %zu bytes from file\n", bytes_read);
     
     /* Null-terminate the buffer */
     buffer[bytes_read] = '\0';
