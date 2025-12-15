@@ -1,4 +1,4 @@
-# RUN81 for the PicoCalc
+# LOAD81 for the PicoCalc
 
 ## Links
 
