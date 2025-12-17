@@ -4,7 +4,7 @@
 
 -- Fetch current date from internet
 function fetch_current_date()
-    print("Fetching current date from internet...")
+    print("Fetching date...")
     
     -- Fetch timestamp from nex://idea.fritz.box/now.txt
     -- Format: "2025-12-17 22:09:20"
@@ -14,14 +14,14 @@ function fetch_current_date()
         -- Extract date part (YYYY-MM-DD) from timestamp
         local date = content:match("(%d%d%d%d%-%d%d%-%d%d)")
         if date then
-            print("Current date: " .. date)
+            print("Date: " .. date)
             return date
         end
     else
-        print("Error fetching date: " .. (err or "unknown error"))
+        print("Error: " .. (err or "unknown"))
     end
     
-    print("Failed to fetch date from internet, using cached date")
+    print("Using cached date")
     return nil
 end
 
@@ -36,8 +36,7 @@ function get_date_string()
     end
     
     -- Fall back to cached date
-    local date_file = "/journal/current_date.txt"
-    local f = io.open(date_file, "r")
+    local f = io.open("/journal/current_date.txt", "r")
     if f then
         local date = f:read("*line")
         f:close()
@@ -52,6 +51,9 @@ end
 
 -- Save current date to file
 function save_date_string(date)
+    -- Ensure journal directory exists
+    mkdir("journal")
+    
     local f = io.open("/journal/current_date.txt", "w")
     if f then
         f:write(date)
@@ -59,10 +61,23 @@ function save_date_string(date)
     end
 end
 
+-- Ensure directory exists
+function ensure_dir(path)
+    local success, err = mkdir(path)
+    if not success and err then
+        print("mkdir " .. path .. ": " .. err)
+    end
+end
+
 -- Main function: open today's journal
 function open_journal()
     local date = get_date_string()
     local year, month = date:match("(%d+)-(%d+)")
+    
+    -- Create directory structure: /journal/YYYY/MM/
+    ensure_dir("journal")
+    ensure_dir("journal/" .. year)
+    ensure_dir("journal/" .. year .. "/" .. month)
     
     -- Build file path: /journal/YYYY/MM/YYYY-MM-DD.txt
     local journal_file = string.format("/journal/%s/%s/%s.txt", year, month, date)

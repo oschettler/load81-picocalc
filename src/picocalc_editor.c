@@ -491,11 +491,21 @@ static int editorSave(char *filename) {
     fat32_file_t file;
     fat32_error_t result;
 
+    /* Try to open existing file */
     result = fat32_open(&file, filename);
     if (result != FAT32_OK) {
-        /* Try to create the file */
+        /* File doesn't exist, create it */
         DEBUG_PRINTF("[Editor] Creating new file: %s\n", filename);
+        result = fat32_create(&file, filename);
+        if (result != FAT32_OK) {
+            DEBUG_PRINTF("[Editor] Error creating file: %s\n", fat32_error_string(result));
+            free(buf);
+            return 1;
+        }
     }
+    
+    /* Seek to beginning to overwrite */
+    fat32_seek(&file, 0);
     
     /* Write the buffer */
     size_t bytes_written = 0;

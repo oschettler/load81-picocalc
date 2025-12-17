@@ -83,7 +83,7 @@ int menu_load_programs(void) {
             menu_items[i] = menu_items[i-1];
         }
         strncpy(menu_items[0].filename, "**REPL**", MAX_FILENAME_LEN - 1);
-        strncpy(menu_items[0].display_name, "[Debug REPL]", MAX_FILENAME_LEN - 1);
+        strncpy(menu_items[0].display_name, "[REPL]", MAX_FILENAME_LEN - 1);
         menu_count++;
     }
     

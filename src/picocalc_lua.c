@@ -3,6 +3,7 @@
 #include "picocalc_framebuffer.h"
 #include "picocalc_keyboard.h"
 #include "picocalc_editor.h"
+#include "fat32.h"
 #include "debug.h"
 #include <string.h>
 #include <stdlib.h>
@@ -168,11 +169,99 @@ static int lua_edit(lua_State *L) {
         return luaL_error(L, "edit() requires a filename string");
     }
     
+    /* Initialize editor before use */
+    editor_init();
+    
     /* Run the editor */
     int result = editor_run(filename);
     
     /* Return result: 0 = saved and exit, 1 = error */
     lua_pushnumber(L, result);
+    return 1;
+}
+
+/* Lua binding: mkdir(path) - create directory recursively */
+static int lua_mkdir(lua_State *L) {
+    const char *path = lua_tostring(L, 1);
+    if (!path) {
+        return luaL_error(L, "mkdir() requires a path string");
+    }
+    
+    /* Skip leading slash if present */
+    if (path[0] == '/') {
+        path++;
+    }
+    
+    /* If path is empty after removing slash, nothing to do */
+    if (path[0] == '\0') {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    
+    /* Build path incrementally, creating each directory level */
+    char current_path[256] = "/";
+    char path_copy[256];
+    strncpy(path_copy, path, sizeof(path_copy) - 1);
+    path_copy[sizeof(path_copy) - 1] = '\0';
+    
+    char *token = strtok(path_copy, "/");
+    while (token != NULL) {
+        /* Append next directory component */
+        if (strlen(current_path) > 1) {
+            strncat(current_path, "/", sizeof(current_path) - strlen(current_path) - 1);
+        }
+        strncat(current_path, token, sizeof(current_path) - strlen(current_path) - 1);
+        
+        /* Try to open the directory to see if it exists */
+        fat32_file_t test_dir;
+        fat32_error_t result = fat32_open(&test_dir, current_path);
+        
+        if (result == FAT32_OK) {
+            /* Directory exists, close it and continue */
+            fat32_close(&test_dir);
+        } else if (result == FAT32_ERROR_FILE_NOT_FOUND || result == FAT32_ERROR_DIR_NOT_FOUND) {
+            /* Directory doesn't exist, create it */
+            fat32_file_t parent_dir;
+            
+            /* Find parent path */
+            char parent_path[256];
+            strncpy(parent_path, current_path, sizeof(parent_path) - 1);
+            parent_path[sizeof(parent_path) - 1] = '\0';
+            char *last_slash = strrchr(parent_path, '/');
+            if (last_slash && last_slash != parent_path) {
+                *last_slash = '\0';
+            } else {
+                strcpy(parent_path, "/");
+            }
+            
+            /* Open parent directory */
+            result = fat32_open(&parent_dir, parent_path);
+            if (result != FAT32_OK) {
+                lua_pushboolean(L, 0);
+                lua_pushstring(L, fat32_error_string(result));
+                return 2;
+            }
+            
+            /* Create the directory */
+            result = fat32_dir_create(&parent_dir, current_path);
+            fat32_close(&parent_dir);
+            
+            if (result != FAT32_OK) {
+                lua_pushboolean(L, 0);
+                lua_pushstring(L, fat32_error_string(result));
+                return 2;
+            }
+        } else {
+            /* Some other error occurred */
+            lua_pushboolean(L, 0);
+            lua_pushstring(L, fat32_error_string(result));
+            return 2;
+        }
+        
+        token = strtok(NULL, "/");
+    }
+    
+    lua_pushboolean(L, 1);
     return 1;
 }
 
@@ -246,6 +335,10 @@ lua_State *lua_init_load81(void) {
     /* Register editor function */
     lua_pushcfunction(L, lua_edit);
     lua_setglobal(L, "edit");
+    
+    /* Register mkdir function */
+    lua_pushcfunction(L, lua_mkdir);
+    lua_setglobal(L, "mkdir");
     
     lua_error_flag = 0;
     lua_error_msg[0] = '\0';

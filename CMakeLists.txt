@@ -7,8 +7,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Debug output option - set to OFF for standalone boot without USB cable
-option(DEBUG_OUTPUT "Enable debug output via UART (requires USB cable)" ON)
+# Debug output option - disabled by default (use on-screen REPL instead)
+option(DEBUG_OUTPUT "Enable debug output via USB (non-blocking)" OFF)
 
 # Board configuration for Pico 2 W (RP2350)
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
@@ -118,17 +118,20 @@ target_link_libraries(load81_picocalc
     hardware_gpio
 )
 
-# Conditionally enable DEBUG_OUTPUT
+# Conditionally enable DEBUG_OUTPUT and stdio
 if(DEBUG_OUTPUT)
     target_compile_definitions(load81_picocalc PRIVATE DEBUG_OUTPUT)
-    message(STATUS "Debug output enabled - device requires USB cable to boot")
+    # Enable stdio - USB is non-blocking and won't hang without a cable
+    # UART would block if no cable is connected, so we use USB instead
+    pico_enable_stdio_uart(load81_picocalc 0)
+    pico_enable_stdio_usb(load81_picocalc 1)
+    message(STATUS "Debug output enabled - outputs to USB when connected")
 else()
-    message(STATUS "Debug output disabled - device will boot standalone")
+    # Disable all stdio when debug output is off
+    pico_enable_stdio_uart(load81_picocalc 0)
+    pico_enable_stdio_usb(load81_picocalc 0)
+    message(STATUS "Debug output disabled")
 endif()
-
-# Enable stdio over UART for debugging (only used when DEBUG_OUTPUT is ON)
-pico_enable_stdio_uart(load81_picocalc 1)
-pico_enable_stdio_usb(load81_picocalc 0)
 
 # Set program metadata
 pico_set_program_name(load81_picocalc "LOAD81 for PicoCalc (debug)")
