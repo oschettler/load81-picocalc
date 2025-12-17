@@ -68,6 +68,9 @@ void kb_poll(void) {
 void kb_reset_events(void) {
     strcpy(current_state, "none");
     current_key[0] = '\0';
+    /* Clear all pressed keys each frame. Since PicoCalc doesn't send KEYUP events,
+     * keys will be re-set if they're still being pressed when kb_get_char() is called. */
+    memset(pressed_keys, 0, sizeof(pressed_keys));
 }
 
 /* Check if a key is currently pressed */
@@ -125,8 +128,19 @@ char kb_get_char(void) {
     strncpy(current_key, keyname, MAX_KEY_NAME_LEN - 1);
     current_key[MAX_KEY_NAME_LEN - 1] = '\0';
     
-    /* Mark key as pressed */
+    /* Mark key as pressed (don't clear other keys - let them persist) */
     pressed_keys[(unsigned char)key] = 1;
+    
+    /* Map PicoCalc arrow keys to special indices for kb_is_pressed() */
+    if (key == 0xB5) {  /* UP arrow */
+        pressed_keys[0x80] = 1;
+    } else if (key == 0xB6) {  /* DOWN arrow */
+        pressed_keys[0x81] = 1;
+    } else if (key == 0xB4) {  /* LEFT arrow */
+        pressed_keys[0x82] = 1;
+    } else if (key == 0xB7) {  /* RIGHT arrow */
+        pressed_keys[0x83] = 1;
+    }
     
     return key;
 }

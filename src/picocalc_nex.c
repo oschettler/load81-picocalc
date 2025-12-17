@@ -211,7 +211,7 @@ static int lua_nex_load(lua_State *L) {
     
     /* Send NEX request */
     char request[512];
-    snprintf(request, sizeof(request), "nex://%s%s\r\n", hostname, path);
+    snprintf(request, sizeof(request), "%s\r\n", path);
     
     err_t write_err = tcp_write(conn.pcb, request, strlen(request), TCP_WRITE_FLAG_COPY);
     if (write_err != ERR_OK) {

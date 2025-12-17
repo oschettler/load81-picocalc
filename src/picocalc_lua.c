@@ -2,8 +2,11 @@
 #include "picocalc_graphics.h"
 #include "picocalc_framebuffer.h"
 #include "picocalc_keyboard.h"
+#include "picocalc_editor.h"
+#include "debug.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static int lua_error_flag = 0;
 static char lua_error_msg[512] = "";
@@ -127,6 +130,52 @@ static int lua_setFPS(lua_State *L) {
     return 0;
 }
 
+/* Custom print() function that outputs to serial console when DEBUG_OUTPUT is enabled */
+static int lua_print(lua_State *L) {
+    int n = lua_gettop(L);  /* number of arguments */
+    
+    #ifdef DEBUG_OUTPUT
+    /* Output to serial console if DEBUG_OUTPUT is enabled */
+    lua_getglobal(L, "tostring");
+    for (int i = 1; i <= n; i++) {
+        const char *s;
+        size_t l;
+        lua_pushvalue(L, -1);     /* function to be called */
+        lua_pushvalue(L, i);      /* value to print */
+        lua_call(L, 1, 1);
+        s = lua_tolstring(L, -1, &l);  /* get result */
+        if (s == NULL)
+            return luaL_error(L, "'tostring' must return a string to 'print'");
+        if (i > 1) printf("\t");
+        printf("%s", s);
+        lua_pop(L, 1);  /* pop result */
+    }
+    printf("\n");
+    fflush(stdout);
+    #else
+    /* When DEBUG_OUTPUT is not enabled, print() becomes a no-op */
+    /* This prevents crashes when stdout is not available */
+    (void)n;  /* Suppress unused variable warning */
+    #endif
+    
+    return 0;
+}
+
+/* Lua binding: edit(filename) */
+static int lua_edit(lua_State *L) {
+    const char *filename = lua_tostring(L, 1);
+    if (!filename) {
+        return luaL_error(L, "edit() requires a filename string");
+    }
+    
+    /* Run the editor */
+    int result = editor_run(filename);
+    
+    /* Return result: 0 = saved and exit, 1 = error */
+    lua_pushnumber(L, result);
+    return 1;
+}
+
 /* Initialize Lua and register LOAD81 API */
 lua_State *lua_init_load81(void) {
     lua_State *L = luaL_newstate();
@@ -189,6 +238,14 @@ lua_State *lua_init_load81(void) {
     
     lua_pushcfunction(L, lua_setFPS);
     lua_setglobal(L, "setFPS");
+    
+    /* Register custom print() function to override standard library */
+    lua_pushcfunction(L, lua_print);
+    lua_setglobal(L, "print");
+    
+    /* Register editor function */
+    lua_pushcfunction(L, lua_edit);
+    lua_setglobal(L, "edit");
     
     lua_error_flag = 0;
     lua_error_msg[0] = '\0';

@@ -87,6 +87,17 @@ int menu_load_programs(void) {
         menu_count++;
     }
     
+    /* Add [New file] option as second item */
+    if (menu_count < MAX_MENU_ITEMS) {
+        /* Shift existing items down (except REPL) */
+        for (int i = menu_count; i > 1; i--) {
+            menu_items[i] = menu_items[i-1];
+        }
+        strncpy(menu_items[1].filename, "**NEWFILE**", MAX_FILENAME_LEN - 1);
+        strncpy(menu_items[1].display_name, "[New file]", MAX_FILENAME_LEN - 1);
+        menu_count++;
+    }
+    
     /* If no files found, add default */
     if (menu_count == 1) {
         DEBUG_PRINTF("No .lua files found, adding default program\n");
@@ -109,7 +120,7 @@ int menu_select_program(void) {
     
     int selected = 0;
     int scroll_offset = 0;
-    const int items_per_screen = 15;
+    const int items_per_screen = 14;  /* Reduced from 15 to prevent last item cutoff */
     
     while (1) {
         /* Clear screen */
@@ -204,10 +215,96 @@ const MenuItem *menu_get_item(int index) {
     return &menu_items[index];
 }
 
+/* Generate unique filename */
+static char *generate_unique_filename(void) {
+    static int file_counter = 1;
+    char *filename = (char *)malloc(MAX_FILENAME_LEN);
+    if (!filename) return NULL;
+    
+    /* Try to find a unique filename */
+    for (int i = file_counter; i < 1000; i++) {
+        snprintf(filename, MAX_FILENAME_LEN, "program%d.lua", i);
+        
+        /* Check if file exists */
+        char fullpath[256];
+        snprintf(fullpath, sizeof(fullpath), "/load81/%s", filename);
+        fat32_file_t file;
+        fat32_error_t result = fat32_open(&file, fullpath);
+        
+        if (result == FAT32_ERROR_FILE_NOT_FOUND) {
+            /* File doesn't exist - this name is available */
+            file_counter = i + 1;
+            return filename;
+        } else if (result == FAT32_OK) {
+            /* File exists - try next number */
+            fat32_close(&file);
+        } else {
+            /* Some other error - use this name anyway */
+            file_counter = i + 1;
+            return filename;
+        }
+    }
+    
+    /* Fallback if we somehow can't find a unique name */
+    snprintf(filename, MAX_FILENAME_LEN, "program%d.lua", file_counter++);
+    return filename;
+}
+
+/* Create new empty file */
+static char *create_new_file(void) {
+    char *filename = generate_unique_filename();
+    if (!filename) {
+        DEBUG_PRINTF("Failed to generate filename\n");
+        return NULL;
+    }
+    
+    DEBUG_PRINTF("Creating new file: %s\n", filename);
+    
+    /* Build full path */
+    char fullpath[256];
+    snprintf(fullpath, sizeof(fullpath), "/load81/%s", filename);
+    
+    /* Create empty program template */
+    const char *template_prog =
+        "-- New LOAD81 Program\n"
+        "\n"
+        "function setup()\n"
+        "    -- Initialize your program here\n"
+        "end\n"
+        "\n"
+        "function draw()\n"
+        "    background(0, 0, 0)\n"
+        "    fill(255, 255, 255, 1)\n"
+        "    text(20, 160, \"Hello, LOAD81!\")\n"
+        "end\n";
+    
+    /* Write file */
+    fat32_file_t file;
+    fat32_error_t result = fat32_create(&file, fullpath);
+    if (result != FAT32_OK) {
+        DEBUG_PRINTF("Error creating file: %s\n", fat32_error_string(result));
+        free(filename);
+        return NULL;
+    }
+    
+    size_t bytes_written = 0;
+    result = fat32_write(&file, template_prog, strlen(template_prog), &bytes_written);
+    fat32_close(&file);
+    
+    if (result != FAT32_OK) {
+        DEBUG_PRINTF("Error writing file: %s\n", fat32_error_string(result));
+        free(filename);
+        return NULL;
+    }
+    
+    DEBUG_PRINTF("Created new file: %s (%zu bytes)\n", filename, bytes_written);
+    return filename;
+}
+
 /* Load file content */
 char *menu_load_file(const char *filename) {
     /* Default program fallback */
-    const char *default_prog = 
+    const char *default_prog =
         "function setup()\n"
         "end\n"
         "\n"
@@ -219,6 +316,18 @@ char *menu_load_file(const char *filename) {
         "    text(20, 140, \"Place .lua files in /load81/\")\n"
         "    text(20, 120, \"Press ESC to return to menu\")\n"
         "end\n";
+    
+    /* If it's the new file marker, create a new file */
+    if (strcmp(filename, "**NEWFILE**") == 0) {
+        char *new_filename = create_new_file();
+        if (new_filename) {
+            /* Load the newly created file */
+            char *content = menu_load_file(new_filename);
+            free(new_filename);
+            return content;
+        }
+        return strdup(default_prog);
+    }
     
     /* If it's the default program, return the default code */
     if (strcmp(filename, "default") == 0) {

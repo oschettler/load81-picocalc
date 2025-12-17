@@ -17,6 +17,36 @@ local LINE_HEIGHT = 12
 local LINES_PER_PAGE = 24
 local MARGIN_X = 5
 local MARGIN_Y = 10
+local MAX_LINE_WIDTH = 35  -- Maximum characters per line before wrapping
+
+-- Wrap text to fit within MAX_LINE_WIDTH characters
+function wrap_text(text, max_width)
+    if #text <= max_width then
+        return {text}
+    end
+    
+    local lines = {}
+    local current_line = ""
+    
+    -- Split by words
+    for word in text:gmatch("%S+") do
+        if #current_line == 0 then
+            current_line = word
+        elseif #current_line + 1 + #word <= max_width then
+            current_line = current_line .. " " .. word
+        else
+            table.insert(lines, current_line)
+            current_line = word
+        end
+    end
+    
+    -- Add remaining text
+    if #current_line > 0 then
+        table.insert(lines, current_line)
+    end
+    
+    return lines
+end
 
 -- Load a NEX page
 function load_page(url)
@@ -29,12 +59,40 @@ function load_page(url)
     
     if content then
         page_content = content
-        parsed_lines = nex.parse(content)
+        local raw_lines = nex.parse(content)
         
-        -- Find all links
+        -- Wrap long lines and rebuild parsed_lines
+        parsed_lines = {}
+        for _, line in ipairs(raw_lines) do
+            if line.type == "link" then
+                -- For links, wrap the label but keep the full text for URL extraction
+                local label = extract_label(line.text)
+                local wrapped = wrap_text(label, MAX_LINE_WIDTH - 2)  -- Account for "> " prefix
+                for i, wrapped_line in ipairs(wrapped) do
+                    table.insert(parsed_lines, {
+                        type = "link",
+                        text = line.text,  -- Keep original for URL extraction
+                        display = wrapped_line,  -- Wrapped text for display
+                        is_continuation = i > 1
+                    })
+                end
+            else
+                -- Wrap regular text and headings
+                local wrapped = wrap_text(line.text, MAX_LINE_WIDTH)
+                for _, wrapped_line in ipairs(wrapped) do
+                    table.insert(parsed_lines, {
+                        type = line.type,
+                        text = wrapped_line,
+                        display = wrapped_line
+                    })
+                end
+            end
+        end
+        
+        -- Find all links (only count first line of each link, not continuations)
         link_indices = {}
         for i, line in ipairs(parsed_lines) do
-            if line.type == "link" then
+            if line.type == "link" and not line.is_continuation then
                 table.insert(link_indices, i)
             end
         end
@@ -56,13 +114,13 @@ end
 -- Extract URL from link line
 function extract_url(link_text)
     -- Link format: "=> url [label]"
-    local url = link_text:match("^%s*=>%s*(%S+)")
+    local url = link_text:match("^%s*(%S+)")
     return url
 end
 
 -- Extract label from link line
 function extract_label(link_text)
-    local url, label = link_text:match("^%s*=>%s*(%S+)%s+(.+)")
+    local url, label = link_text:match("^%s*(%S+)%s+(.+)")
     if label then
         return label
     else
@@ -97,9 +155,11 @@ function navigate_to_link()
     
     local line_idx = link_indices[selected_link]
     local line = parsed_lines[line_idx]
+    print('LINK ', line_idx, line.type, line.text)
     
     if line and line.type == "link" then
         local url = extract_url(line.text)
+        print('URL ', url)
         if url then
             -- Add current page to history
             table.insert(history, current_url)
@@ -167,30 +227,33 @@ function draw()
         if line.type == "heading" then
             -- Heading in yellow
             fill(255, 255, 100, 1)
-            text(MARGIN_X, y, line.text)
+            text(MARGIN_X, y, line.display or line.text)
         elseif line.type == "link" then
-            -- Check if this link is selected
+            -- Check if this link is selected (only for first line of link)
             local is_selected = false
-            for idx, link_idx in ipairs(link_indices) do
-                if link_idx == i and idx == selected_link then
-                    is_selected = true
-                    break
+            if not line.is_continuation then
+                for idx, link_idx in ipairs(link_indices) do
+                    if link_idx == i and idx == selected_link then
+                        is_selected = true
+                        break
+                    end
                 end
             end
             
             if is_selected then
                 -- Selected link in bright cyan with marker
                 fill(0, 255, 255, 1)
-                text(MARGIN_X, y, "> " .. extract_label(line.text))
+                text(MARGIN_X, y, "> " .. (line.display or extract_label(line.text)))
             else
-                -- Unselected link in cyan
+                -- Unselected link or continuation in cyan
                 fill(100, 200, 255, 1)
-                text(MARGIN_X + 10, y, extract_label(line.text))
+                local indent = line.is_continuation and 12 or 10
+                text(MARGIN_X + indent, y, line.display or extract_label(line.text))
             end
         else
             -- Regular text in white
             fill(200, 200, 200, 1)
-            text(MARGIN_X, y, line.text)
+            text(MARGIN_X, y, line.display or line.text)
         end
         
         y = y - LINE_HEIGHT

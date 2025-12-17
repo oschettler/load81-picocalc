@@ -53,6 +53,9 @@ static bool init_hardware(void) {
     lcd_init();
     lcd_clear_screen();
     
+    /* Disable text cursor (LOAD81 is a graphics application) */
+    lcd_enable_cursor(false);
+    
     /* Initialize keyboard */
     kb_init();
     
@@ -82,8 +85,11 @@ static void show_splash(void) {
     
     g_draw_r = 255; g_draw_g = 255; g_draw_b = 0; g_draw_alpha = 255;
     DEBUG_PRINTF("Drawing text at (60, 180)\n");
+#ifdef DEBUG_OUTPUT
+    gfx_draw_string(60, 180, "LOAD81 for PicoCalc (debug)", 19);
+#else
     gfx_draw_string(60, 180, "LOAD81 for PicoCalc", 19);
-    
+#endif    
     g_draw_r = 200; g_draw_g = 200; g_draw_b = 200; g_draw_alpha = 255;
     gfx_draw_string(80, 150, "Version 1.0", 11);
     
@@ -94,6 +100,101 @@ static void show_splash(void) {
     DEBUG_PRINTF("Presenting framebuffer\n");
     fb_present();
     sleep_ms(2000);
+}
+
+/* Format error message: remove decimal from line numbers and wrap at 35 chars */
+static void format_error_message(const char *err, char *out, size_t out_size) {
+    char temp[512];
+    const char *src = err;
+    char *dst = temp;
+    size_t remaining = sizeof(temp) - 1;
+    
+    /* First pass: remove decimal points from line numbers */
+    while (*src && remaining > 0) {
+        if (*src == ':' && *(src + 1) >= '0' && *(src + 1) <= '9') {
+            /* Found line number after colon */
+            *dst++ = *src++;  /* Copy colon */
+            remaining--;
+            
+            /* Copy digits, skip decimal point */
+            while (*src && remaining > 0) {
+                if (*src >= '0' && *src <= '9') {
+                    *dst++ = *src++;
+                    remaining--;
+                } else if (*src == '.') {
+                    src++;  /* Skip decimal point */
+                    /* Skip remaining decimal digits */
+                    while (*src >= '0' && *src <= '9') {
+                        src++;
+                    }
+                    break;
+                } else {
+                    break;
+                }
+            }
+        } else {
+            *dst++ = *src++;
+            remaining--;
+        }
+    }
+    *dst = '\0';
+    
+    /* Second pass: wrap at 35 characters */
+    src = temp;
+    dst = out;
+    remaining = out_size - 1;
+    int line_len = 0;
+    
+    while (*src && remaining > 0) {
+        if (line_len >= 35 && *src == ' ') {
+            /* Insert newline at space */
+            *dst++ = '\n';
+            remaining--;
+            line_len = 0;
+            src++;  /* Skip the space */
+        } else if (line_len >= 35) {
+            /* Force wrap */
+            *dst++ = '\n';
+            remaining--;
+            line_len = 0;
+        } else {
+            *dst++ = *src++;
+            remaining--;
+            line_len++;
+            if (*(src - 1) == '\n') {
+                line_len = 0;
+            }
+        }
+    }
+    *dst = '\0';
+}
+
+/* Draw multi-line error message */
+static void draw_error_lines(int x, int y, const char *text) {
+    const char *line_start = text;
+    int line_y = y;
+    
+    while (*line_start) {
+        const char *line_end = strchr(line_start, '\n');
+        int line_len;
+        
+        if (line_end) {
+            line_len = line_end - line_start;
+        } else {
+            line_len = strlen(line_start);
+        }
+        
+        if (line_len > 0) {
+            gfx_draw_string(x, line_y, line_start, line_len);
+            line_y -= 12;  /* Move down for next line */
+        }
+        
+        if (line_end) {
+            line_start = line_end + 1;
+        } else {
+            break;
+        }
+    }
 }
 
 /* Main program loop */
@@ -108,10 +209,15 @@ static void program_loop(lua_State *L) {
         /* Show error */
         fb_fill_background(50, 0, 0);
         g_draw_r = 255; g_draw_g = 255; g_draw_b = 255; g_draw_alpha = 255;
-        gfx_draw_string(10, 160, "Lua Error in setup():", 21);
+        gfx_draw_string(10, 220, "Lua Error in setup():", 21);
         g_draw_r = 255; g_draw_g = 100; g_draw_b = 100; g_draw_alpha = 255;
-        gfx_draw_string(10, 140, lua_get_error(L), strlen(lua_get_error(L)));
-        gfx_draw_string(10, 120, "Press any key", 13);
+        
+        char formatted_err[512];
+        format_error_message(lua_get_error(L), formatted_err, sizeof(formatted_err));
+        draw_error_lines(10, 200, formatted_err);
+        
+        g_draw_r = 200; g_draw_g = 200; g_draw_b = 200; g_draw_alpha = 255;
+        gfx_draw_string(10, 20, "Press any key", 13);
         fb_present();
         kb_wait_key();
         g_program_running = false;
@@ -144,15 +250,15 @@ static void program_loop(lua_State *L) {
             /* Show error */
             fb_fill_background(50, 0, 0);
             g_draw_r = 255; g_draw_g = 255; g_draw_b = 255; g_draw_alpha = 255;
-            gfx_draw_string(10, 180, "Lua Error in draw():", 20);
+            gfx_draw_string(10, 220, "Lua Error in draw():", 20);
             g_draw_r = 255; g_draw_g = 100; g_draw_b = 100; g_draw_alpha = 255;
-            const char *err = lua_get_error(L);
-            /* Limit error message length */
-            char err_buf[100];
-            strncpy(err_buf, err, 99);
-            err_buf[99] = '\0';
-            gfx_draw_string(10, 160, err_buf, strlen(err_buf));
-            gfx_draw_string(10, 120, "Press any key", 13);
+            
+            char formatted_err[512];
+            format_error_message(lua_get_error(L), formatted_err, sizeof(formatted_err));
+            draw_error_lines(10, 200, formatted_err);
+            
+            g_draw_r = 200; g_draw_g = 200; g_draw_b = 200; g_draw_alpha = 255;
+            gfx_draw_string(10, 20, "Press any key", 13);
             fb_present();
             kb_wait_key();
             g_program_running = false;
@@ -352,14 +458,15 @@ int main(void) {
             /* Error loading program */
             fb_fill_background(50, 0, 0);
             g_draw_r = 255; g_draw_g = 255; g_draw_b = 255; g_draw_alpha = 255;
-            gfx_draw_string(10, 180, "Lua Error:", 10);
+            gfx_draw_string(10, 220, "Lua Error:", 10);
             g_draw_r = 255; g_draw_g = 100; g_draw_b = 100; g_draw_alpha = 255;
-            const char *err = lua_get_error(g_lua);
-            char err_buf[100];
-            strncpy(err_buf, err, 99);
-            err_buf[99] = '\0';
-            gfx_draw_string(10, 160, err_buf, strlen(err_buf));
-            gfx_draw_string(10, 120, "Press any key", 13);
+            
+            char formatted_err[512];
+            format_error_message(lua_get_error(g_lua), formatted_err, sizeof(formatted_err));
+            draw_error_lines(10, 200, formatted_err);
+            
+            g_draw_r = 200; g_draw_g = 200; g_draw_b = 200; g_draw_alpha = 255;
+            gfx_draw_string(10, 20, "Press any key", 13);
             fb_present();
             kb_wait_key();
             

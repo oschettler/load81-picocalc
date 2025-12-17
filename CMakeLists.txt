@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Debug output option - set to OFF for standalone boot without USB cable
-option(DEBUG_OUTPUT "Enable debug output via UART (requires USB cable)" OFF)
+option(DEBUG_OUTPUT "Enable debug output via UART (requires USB cable)" ON)
 
 # Board configuration for Pico 2 W (RP2350)
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
@@ -131,7 +131,7 @@ pico_enable_stdio_uart(load81_picocalc 1)
 pico_enable_stdio_usb(load81_picocalc 0)
 
 # Set program metadata
-pico_set_program_name(load81_picocalc "LOAD81 for PicoCalc")
+pico_set_program_name(load81_picocalc "LOAD81 for PicoCalc (debug)")
 pico_set_program_version(load81_picocalc "1.0")
 
 # Generate UF2 and other outputs
