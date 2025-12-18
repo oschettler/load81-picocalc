@@ -7,6 +7,13 @@
 #include "debug.h"
 #include <stdbool.h>
 
+#ifdef ENABLE_9P_SERVER
+/* 9P Server control functions */
+extern void p9_server_request_start(void);
+extern void p9_server_request_stop(void);
+extern bool p9_server_is_active(void);
+#endif
+
 static bool wifi_initialized = false;
 static bool wifi_connected = false;
 static char wifi_ip[16] = "0.0.0.0";
@@ -135,6 +142,13 @@ static int lua_wifi_connect(lua_State *L) {
         update_ip_string();
         DEBUG_PRINTF("[WiFi] ✓ Successfully connected!\n");
         DEBUG_PRINTF("[WiFi] IP Address: %s\n", wifi_ip);
+        
+#ifdef ENABLE_9P_SERVER
+        /* Start 9P server on successful WiFi connection */
+        DEBUG_PRINTF("[WiFi] Starting 9P server...\n");
+        p9_server_request_start();
+#endif
+        
         DEBUG_PRINTF("[WiFi] =============================================\n");
         lua_pushboolean(L, 1);
     } else {
@@ -171,6 +185,13 @@ static int lua_wifi_connect(lua_State *L) {
 static int lua_wifi_disconnect(lua_State *L) {
     if (wifi_initialized && wifi_connected) {
         DEBUG_PRINTF("[WiFi] Disconnecting...\n");
+        
+#ifdef ENABLE_9P_SERVER
+        /* Stop 9P server on WiFi disconnect */
+        DEBUG_PRINTF("[WiFi] Stopping 9P server...\n");
+        p9_server_request_stop();
+#endif
+        
         cyw43_arch_disable_sta_mode();
         cyw43_arch_enable_sta_mode();
     }

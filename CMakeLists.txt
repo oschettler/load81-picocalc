@@ -10,6 +10,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Debug output option - disabled by default (use on-screen REPL instead)
 option(DEBUG_OUTPUT "Enable debug output via USB (non-blocking)" OFF)
 
+# 9P server option - enabled by default
+option(ENABLE_9P_SERVER "Enable 9P filesystem server over WiFi" ON)
+
 # Board configuration for Pico 2 W (RP2350)
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
@@ -86,6 +89,36 @@ target_link_libraries(picocalc_drivers
     hardware_gpio
 )
 
+# 9P Server library (optional)
+if(ENABLE_9P_SERVER)
+    add_library(picocalc_9p STATIC
+        src/picocalc_9p_proto.c
+        src/picocalc_9p.c
+        src/picocalc_9p_handlers.c
+        src/picocalc_9p_fs.c
+        src/picocalc_fat32_sync.c
+        src/picocalc_mdns.c
+        src/picocalc_9p_core1.c
+    )
+    
+    target_include_directories(picocalc_9p PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/extern/picocalc-text-start/drivers
+    )
+    
+    target_link_libraries(picocalc_9p
+        picocalc_drivers
+        pico_stdlib
+        pico_sync
+        pico_multicore
+        pico_cyw43_arch_lwip_poll
+    )
+    
+    target_compile_definitions(picocalc_9p PRIVATE ENABLE_9P_SERVER)
+    
+    message(STATUS "9P server enabled")
+endif()
+
 # Main executable
 add_executable(load81_picocalc
     src/main.c
@@ -112,11 +145,19 @@ target_link_libraries(load81_picocalc
     picocalc_drivers
     lua52
     pico_stdlib
+    pico_sync
+    pico_multicore
     pico_cyw43_arch_lwip_poll
     hardware_spi
     hardware_i2c
     hardware_gpio
 )
+
+# Link 9P server if enabled
+if(ENABLE_9P_SERVER)
+    target_link_libraries(load81_picocalc picocalc_9p)
+    target_compile_definitions(load81_picocalc PRIVATE ENABLE_9P_SERVER)
+endif()
 
 # Conditionally enable DEBUG_OUTPUT and stdio
 if(DEBUG_OUTPUT)
