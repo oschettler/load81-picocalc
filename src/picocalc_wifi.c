@@ -6,17 +6,8 @@
 #include <string.h>
 #include "debug.h"
 #include <stdbool.h>
+#include "picocalc_file_server.h"
 #include "picocalc_diag_server.h"
-
-#ifdef ENABLE_9P_SERVER
-/* 9P Server control functions */
-extern void p9_server_request_start(void);
-extern void p9_server_request_stop(void);
-extern bool p9_server_is_active(void);
-extern bool p9_server_is_running(void);
-extern uint32_t p9_server_get_client_count(void);
-#define P9_SERVER_PORT 564
-#endif
 
 static bool wifi_initialized = false;
 static bool wifi_connected = false;
@@ -147,19 +138,28 @@ static int lua_wifi_connect(lua_State *L) {
         DEBUG_PRINTF("[WiFi] ✓ Successfully connected!\n");
         DEBUG_PRINTF("[WiFi] IP Address: %s\n", wifi_ip);
         
-#ifdef ENABLE_9P_SERVER
-        /* Start 9P server on successful WiFi connection */
-        DEBUG_PRINTF("[WiFi] Starting 9P server...\n");
-        p9_server_request_start();
-#endif
-        
-        /* Start diagnostic NEX server */
-        DEBUG_PRINTF("[WiFi] Starting diagnostic server on port 1900...\n");
-        diag_server_init();
-        if (diag_server_start()) {
-            DEBUG_PRINTF("[WiFi] Diagnostic server started\n");
+        /* Initialize and start file server on successful connection */
+        DEBUG_PRINTF("[WiFi] Starting load81r file server...\n");
+        if (file_server_init()) {
+            if (file_server_start()) {
+                DEBUG_PRINTF("[WiFi] ✓ File server started on port 1900\n");
+            } else {
+                DEBUG_PRINTF("[WiFi] ✗ Failed to start file server\n");
+            }
         } else {
-            DEBUG_PRINTF("[WiFi] Failed to start diagnostic server\n");
+            DEBUG_PRINTF("[WiFi] ✗ Failed to initialize file server\n");
+        }
+        
+        /* Initialize and start diagnostic server */
+        DEBUG_PRINTF("[WiFi] Starting diagnostic server...\n");
+        if (diag_server_init()) {
+            if (diag_server_start()) {
+                DEBUG_PRINTF("[WiFi] ✓ Diagnostic server started on port 1901\n");
+            } else {
+                DEBUG_PRINTF("[WiFi] ✗ Failed to start diagnostic server\n");
+            }
+        } else {
+            DEBUG_PRINTF("[WiFi] ✗ Failed to initialize diagnostic server\n");
         }
         
         DEBUG_PRINTF("[WiFi] =============================================\n");
@@ -198,19 +198,6 @@ static int lua_wifi_connect(lua_State *L) {
 static int lua_wifi_disconnect(lua_State *L) {
     if (wifi_initialized && wifi_connected) {
         DEBUG_PRINTF("[WiFi] Disconnecting...\n");
-        
-#ifdef ENABLE_9P_SERVER
-        /* Stop 9P server on WiFi disconnect */
-        DEBUG_PRINTF("[WiFi] Stopping 9P server...\n");
-        p9_server_request_stop();
-#endif
-        
-        /* Stop diagnostic server */
-        if (diag_server_is_running()) {
-            DEBUG_PRINTF("[WiFi] Stopping diagnostic server...\n");
-            diag_server_stop();
-        }
-        
         cyw43_arch_disable_sta_mode();
         cyw43_arch_enable_sta_mode();
     }
@@ -348,59 +335,6 @@ static int lua_wifi_debug_info(lua_State *L) {
     return 0;
 }
 
-#ifdef ENABLE_9P_SERVER
-/* Lua: wifi.p9_status() - get 9P server status */
-static int lua_wifi_p9_status(lua_State *L) {
-    lua_newtable(L);
-    
-    /* Check if server is active */
-    bool active = p9_server_is_active();
-    lua_pushboolean(L, active);
-    lua_setfield(L, -2, "active");
-    
-    /* Get server state */
-    bool running = p9_server_is_running();
-    lua_pushboolean(L, running);
-    lua_setfield(L, -2, "running");
-    
-    /* Get client count */
-    uint32_t clients = p9_server_get_client_count();
-    lua_pushinteger(L, clients);
-    lua_setfield(L, -2, "clients");
-    
-    /* Get port */
-    lua_pushinteger(L, P9_SERVER_PORT);
-    lua_setfield(L, -2, "port");
-    
-    return 1;
-}
-
-/* Lua: wifi.p9_info() - print 9P server status (for REPL) */
-static int lua_wifi_p9_info(lua_State *L) {
-    bool active = p9_server_is_active();
-    bool running = p9_server_is_running();
-    uint32_t clients = p9_server_get_client_count();
-    
-    DEBUG_PRINTF("[9P] ========== 9P Server Status ==========\n");
-    DEBUG_PRINTF("[9P] Active: %s\n", active ? "YES" : "NO");
-    DEBUG_PRINTF("[9P] Running: %s\n", running ? "YES" : "NO");
-    DEBUG_PRINTF("[9P] Clients: %lu\n", (unsigned long)clients);
-    DEBUG_PRINTF("[9P] Port: %d\n", P9_SERVER_PORT);
-    DEBUG_PRINTF("[9P] ========================================\n");
-    
-    /* Also return a formatted string for REPL display */
-    char status_str[128];
-    snprintf(status_str, sizeof(status_str),
-             "9P: %s, Running: %s, Clients: %lu, Port: %d",
-             active ? "Active" : "Inactive",
-             running ? "Yes" : "No",
-             (unsigned long)clients,
-             P9_SERVER_PORT);
-    lua_pushstring(L, status_str);
-    return 1;
-}
-#endif
-
 /* Get WiFi status as C string */
 const char* wifi_get_status_string(void) {
     if (!wifi_initialized) {
@@ -461,14 +395,6 @@ void wifi_register_lua(lua_State *L) {
     
     lua_pushcfunction(L, lua_wifi_debug_info);
     lua_setfield(L, -2, "debug_info");
-    
-#ifdef ENABLE_9P_SERVER
-    lua_pushcfunction(L, lua_wifi_p9_status);
-    lua_setfield(L, -2, "p9_status");
-    
-    lua_pushcfunction(L, lua_wifi_p9_info);
-    lua_setfield(L, -2, "p9_info");
-#endif
     
     lua_setglobal(L, "wifi");
 }

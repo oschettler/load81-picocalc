@@ -7,11 +7,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Debug output option - disabled by default (use on-screen REPL instead)
-option(DEBUG_OUTPUT "Enable debug output via USB (non-blocking)" OFF)
-
-# 9P server option - enabled by default
-option(ENABLE_9P_SERVER "Enable 9P filesystem server over WiFi" ON)
+# Debug output option - ENABLED for WiFi debugging
+option(DEBUG_OUTPUT "Enable debug output via USB (non-blocking)" ON)
 
 # Board configuration for Pico 2 W (RP2350)
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
@@ -89,37 +86,6 @@ target_link_libraries(picocalc_drivers
     hardware_gpio
 )
 
-# 9P Server library (optional)
-if(ENABLE_9P_SERVER)
-    add_library(picocalc_9p STATIC
-        src/picocalc_9p_proto.c
-        src/picocalc_9p.c
-        src/picocalc_9p_handlers.c
-        src/picocalc_9p_fs.c
-        src/picocalc_fat32_sync.c
-        src/picocalc_mdns.c
-        src/picocalc_9p_core1.c
-        src/picocalc_debug_log.c
-    )
-    
-    target_include_directories(picocalc_9p PUBLIC
-        ${CMAKE_CURRENT_LIST_DIR}/src
-        ${CMAKE_CURRENT_LIST_DIR}/extern/picocalc-text-start/drivers
-    )
-    
-    target_link_libraries(picocalc_9p
-        picocalc_drivers
-        pico_stdlib
-        pico_sync
-        pico_multicore
-        pico_cyw43_arch_lwip_poll
-    )
-    
-    target_compile_definitions(picocalc_9p PRIVATE ENABLE_9P_SERVER)
-    
-    message(STATUS "9P server enabled")
-endif()
-
 # Main executable
 add_executable(load81_picocalc
     src/main.c
@@ -134,6 +100,9 @@ add_executable(load81_picocalc
     src/picocalc_repl.c
     src/picocalc_diag_server.c
     src/picocalc_debug_log.c
+    src/picocalc_file_server.c
+    src/picocalc_fs_handler.c
+    src/picocalc_repl_handler.c
 )
 
 target_include_directories(load81_picocalc PRIVATE
@@ -156,26 +125,18 @@ target_link_libraries(load81_picocalc
     hardware_gpio
 )
 
-# Link 9P server if enabled
-if(ENABLE_9P_SERVER)
-    target_link_libraries(load81_picocalc picocalc_9p)
-    target_compile_definitions(load81_picocalc PRIVATE ENABLE_9P_SERVER)
-endif()
-
-# Conditionally enable DEBUG_OUTPUT and stdio
+# Conditionally enable DEBUG_OUTPUT
 if(DEBUG_OUTPUT)
     target_compile_definitions(load81_picocalc PRIVATE DEBUG_OUTPUT)
-    # Enable stdio - USB is non-blocking and won't hang without a cable
-    # UART would block if no cable is connected, so we use USB instead
-    pico_enable_stdio_uart(load81_picocalc 0)
-    pico_enable_stdio_usb(load81_picocalc 1)
-    message(STATUS "Debug output enabled - outputs to USB when connected")
+    message(STATUS "Debug output enabled - outputs to debug log buffer (accessible via diagnostic server)")
 else()
-    # Disable all stdio when debug output is off
-    pico_enable_stdio_uart(load81_picocalc 0)
-    pico_enable_stdio_usb(load81_picocalc 0)
     message(STATUS "Debug output disabled")
 endif()
+
+# Disable stdio - we don't use USB/UART for debug output
+# Debug messages go to internal buffer accessible via diagnostic server
+pico_enable_stdio_uart(load81_picocalc 0)
+pico_enable_stdio_usb(load81_picocalc 0)
 
 # Set program metadata
 pico_set_program_name(load81_picocalc "LOAD81 for PicoCalc (debug)")

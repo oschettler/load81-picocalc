@@ -5,7 +5,7 @@
  * Increment BUILD_NUMBER for each build to track which version is flashed
  */
 
-#define BUILD_NUMBER 20
+#define BUILD_NUMBER 46
 #define BUILD_VERSION "1.0.0"
 
 #endif /* BUILD_VERSION_H */

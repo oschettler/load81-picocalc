@@ -3,6 +3,7 @@
 #include "picocalc_framebuffer.h"
 #include "picocalc_graphics.h"
 #include "pico/stdlib.h"
+#include "pico/cyw43_arch.h"
 #include "debug.h"
 #include <string.h>
 #include <stdlib.h>
@@ -250,9 +251,14 @@ void repl_run(lua_State *L) {
     while (running) {
         draw_repl_screen();
         
-        /* Wait for key */
+        /* Wait for key with network polling */
         kb_reset_events();
-        char key = kb_wait_key();
+        char key = 0;
+        while (!kb_key_available()) {
+            cyw43_arch_poll();  /* Poll network stack for file server */
+            sleep_ms(10);
+        }
+        key = kb_get_char();
         
         /* Handle input */
         if (key == 0xB1) {  /* ESC */

@@ -1,9 +1,9 @@
 /**
  * @file picocalc_diag_server.c
  * @brief Simple NEX Diagnostic Server
- * 
+ *
  * Provides a simple NEX server on port 1900 that returns system status
- * including 9P server state, WiFi info, and connection statistics.
+ * including WiFi info and connection statistics.
  * Used for debugging incoming connection issues.
  * 
  * NEX Protocol: Client sends path (e.g., "/status\r\n"), server responds with text.
@@ -19,12 +19,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef ENABLE_9P_SERVER
-extern bool p9_server_is_running(void);
-extern uint32_t p9_server_get_client_count(void);
-#endif
-
-#define DIAG_PORT 1900
+#define DIAG_PORT 1901
 #define DIAG_MAX_CLIENTS 2
 
 typedef struct {
@@ -190,7 +185,7 @@ static err_t diag_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
 }
 
 static void diag_send_status(diag_client_t *client) {
-    char response[1024];
+    static char response[4096];  /* Static to avoid stack overflow */
     int len = 0;
     
     /* NEX response format: plain text */
@@ -210,23 +205,6 @@ static void diag_send_status(diag_client_t *client) {
         "IP Address: %s\n\n",
         wifi_status, wifi_ip);
     
-    /* 9P server status */
-#ifdef ENABLE_9P_SERVER
-    bool p9_running = p9_server_is_running();
-    uint32_t p9_clients = p9_server_get_client_count();
-    len += snprintf(response + len, sizeof(response) - len,
-        "## 9P Server Status\n"
-        "Running: %s\n"
-        "Port: 564\n"
-        "Connected Clients: %lu\n\n",
-        p9_running ? "YES" : "NO",
-        (unsigned long)p9_clients);
-#else
-    len += snprintf(response + len, sizeof(response) - len,
-        "## 9P Server Status\n"
-        "Running: DISABLED IN BUILD\n\n");
-#endif
-    
     /* Diagnostic server stats */
     len += snprintf(response + len, sizeof(response) - len,
         "## Diagnostic Server Stats\n"
@@ -243,14 +221,12 @@ static void diag_send_status(diag_client_t *client) {
         "## Test Commands\n"
         "=> nex://%s/status  Test NEX server\n"
         "$ nc -zv %s 1900   Test NEX port\n"
-        "$ nc -zv %s 564    Test 9P port\n"
         "$ curl http://%s:1900  Test with curl\n\n",
-        wifi_ip,
         wifi_ip,
         wifi_ip,
         wifi_ip);
     
-    /* Add debug log */
+    /* Add debug log - limit to 2KB to avoid buffer overflow */
     uint32_t log_len = 0;
     const char *log = debug_log_get(&log_len);
     if (log_len > 0) {
@@ -259,12 +235,25 @@ static void diag_send_status(diag_client_t *client) {
         
         /* Copy log data, ensuring we don't overflow response buffer */
         uint32_t copy_len = log_len;
-        if (len + copy_len > sizeof(response) - 1) {
-            copy_len = sizeof(response) - len - 1;
+        uint32_t max_log = 2048;  /* Limit debug log to 2KB in response */
+        if (copy_len > max_log) {
+            copy_len = max_log;
         }
-        memcpy(response + len, log, copy_len);
-        len += copy_len;
+        if (len + copy_len > sizeof(response) - 100) {  /* Leave 100 bytes margin */
+            copy_len = sizeof(response) - len - 100;
+        }
+        if (copy_len > 0) {
+            memcpy(response + len, log, copy_len);
+            len += copy_len;
+            if (log_len > copy_len) {
+                len += snprintf(response + len, sizeof(response) - len,
+                    "\n... (truncated, %lu more bytes)\n", (unsigned long)(log_len - copy_len));
+            }
+        }
         response[len] = '\0';
+    } else {
+        len += snprintf(response + len, sizeof(response) - len,
+            "## Debug Log\n(empty - no debug messages yet)\n\n");
     }
     
     /* Send response */

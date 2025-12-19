@@ -50,10 +50,11 @@ void debug_log(const char *format, ...) {
         temp[len] = '\0';
     }
     
-    /* NON-BLOCKING write to circular buffer - safe for interrupt context!
-     * If mutex is busy, skip this log entry rather than blocking/crashing */
-    if (!mutex_try_enter(&g_debug_log.mutex, NULL)) {
-        return;  /* Mutex busy, skip this log entry */
+    /* BLOCKING write to circular buffer with timeout
+     * Use a timeout to avoid deadlock but ensure messages get written */
+    absolute_time_t timeout = make_timeout_time_ms(100);  /* 100ms timeout */
+    if (!mutex_enter_block_until(&g_debug_log.mutex, &timeout)) {
+        return;  /* Timeout - skip this log entry */
     }
     
     for (int i = 0; i < len; i++) {
@@ -80,14 +81,27 @@ const char* debug_log_get(uint32_t *out_len) {
     /* If buffer hasn't wrapped, return from start */
     if (g_debug_log.total_bytes < DEBUG_LOG_SIZE) {
         *out_len = g_debug_log.write_pos;
-    } else {
-        /* Buffer has wrapped - return full buffer */
-        *out_len = DEBUG_LOG_SIZE;
+        mutex_exit(&g_debug_log.mutex);
+        return g_debug_log.buffer;
     }
     
+    /* Buffer has wrapped - need to return in chronological order
+     * Most recent data is at write_pos, oldest is at write_pos+1
+     * We need to rearrange: [write_pos..end] + [0..write_pos-1]
+     * Use a static buffer to avoid dynamic allocation */
+    static char ordered_buffer[DEBUG_LOG_SIZE];
+    uint32_t first_part_len = DEBUG_LOG_SIZE - g_debug_log.write_pos;
+    uint32_t second_part_len = g_debug_log.write_pos;
+    
+    /* Copy oldest messages first (from write_pos to end) */
+    memcpy(ordered_buffer, g_debug_log.buffer + g_debug_log.write_pos, first_part_len);
+    /* Then copy newer messages (from start to write_pos) */
+    memcpy(ordered_buffer + first_part_len, g_debug_log.buffer, second_part_len);
+    
+    *out_len = DEBUG_LOG_SIZE;
     mutex_exit(&g_debug_log.mutex);
     
-    return g_debug_log.buffer;
+    return ordered_buffer;
 }
 
 void debug_log_clear(void) {

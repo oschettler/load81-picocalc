@@ -5,8 +5,8 @@
 print("=== LOAD81 Startup Script ===")
 
 -- WiFi Configuration
-local WIFI_SSID = "YourNetworkName"
-local WIFI_PASSWORD = "YourPassword"
+local WIFI_SSID = "schettler"
+local WIFI_PASSWORD = "1122334455667"
 
 -- Connect to WiFi
 print("Connecting to WiFi: " .. WIFI_SSID)
@@ -16,7 +16,7 @@ if wifi.connect(WIFI_SSID, WIFI_PASSWORD) then
     
     -- Example: Load a NEX page
     print("\nTesting NEX protocol...")
-    local content, err = nex.load("nex://example.com/")
+    local content, err = nex.load("nex://idea.fritz.box/")
     if content then
         print("NEX page loaded successfully!")
         local parsed = nex.parse(content)

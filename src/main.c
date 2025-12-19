@@ -30,12 +30,6 @@
 #include "picocalc_repl.h"
 #include "picocalc_debug_log.h"
 
-#ifdef ENABLE_9P_SERVER
-/* 9P Server Core 1 functions */
-extern void p9_core1_launch(void);
-extern bool p9_server_is_active(void);
-#endif
-
 #define FPS 30
 #define FRAME_TIME_MS (1000 / FPS)
 
@@ -83,13 +77,6 @@ static bool init_hardware(void) {
     
     /* Initialize NEX */
     nex_init();
-    
-#ifdef ENABLE_9P_SERVER
-    /* Launch Core 1 with 9P server */
-    DEBUG_PRINTF("Launching 9P server on Core 1...\n");
-    p9_core1_launch();
-    DEBUG_PRINTF("9P server core launched\n");
-#endif
     
     return true;
 }
@@ -368,6 +355,9 @@ int main(void) {
     
     /* Main menu loop */
     while (1) {
+        /* Poll network stack for incoming connections */
+        cyw43_arch_poll();
+        
         /* Initialize menu */
         menu_init();
         
@@ -386,6 +376,9 @@ int main(void) {
             sleep_ms(3000);
             continue;
         }
+        
+        /* Poll network while in menu */
+        cyw43_arch_poll();
         
         /* Show menu and select program */
         int selected = menu_select_program();
