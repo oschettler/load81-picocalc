@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <stdio.h>
 #include "debug.h"
 #include "picocalc_menu.h"
 #include "picocalc_framebuffer.h"
@@ -8,6 +9,8 @@
 #include "picocalc_keyboard.h"
 #include "picocalc_wifi.h"
 #include "fat32.h"
+#include "build_version.h"
+#include "pico/cyw43_arch.h"
 #include <lua.h>
 #include <lauxlib.h>
 
@@ -126,30 +129,33 @@ int menu_select_program(void) {
         /* Clear screen */
         fb_fill_background(0, 0, 50);
         
-        /* Draw title */
+        /* Draw title aligned with IP address */
         g_draw_r = 255; g_draw_g = 255; g_draw_b = 0; g_draw_alpha = 255;
-        gfx_draw_string(10, 300, "LOAD81 for PicoCalc", 19);
+        gfx_draw_string(10, 305, "LOAD81 on PicoCalc", 18);
         
-        /* Draw WiFi status in top right */
+        /* Draw WiFi status/IP in top right */
         const char *wifi_status = wifi_get_status_string();
         const char *wifi_ip = wifi_get_ip_string();
         
-        /* If online, show IP address; otherwise show status */
-        if (strcmp(wifi_status, "Online") == 0) {
-            /* Connected - show IP address in green */
+        /* Always try to show IP if we have one, otherwise show status */
+        if (strcmp(wifi_ip, "0.0.0.0") != 0) {
+            /* Have IP address - show it in green */
             g_draw_r = 100; g_draw_g = 255; g_draw_b = 100; g_draw_alpha = 255;
-            gfx_draw_string(220, 305, wifi_ip, strlen(wifi_ip));
+            /* Position IP address - screen is 320px wide, font is 9px per char (8px + 1px spacing)
+             * For IP like "192.168.178.122" (15 chars), need 135px width
+             * Start at x=180 to fit within 320px with margin: 180 + 135 = 315 */
+            gfx_draw_string(180, 305, wifi_ip, strlen(wifi_ip));
         } else {
-            /* Not connected - show status in blue/gray */
+            /* No IP - show status in blue/gray */
             g_draw_r = 150; g_draw_g = 150; g_draw_b = 255; g_draw_alpha = 255;
             gfx_draw_string(240, 305, wifi_status, strlen(wifi_status));
         }
         
         g_draw_r = 200; g_draw_g = 200; g_draw_b = 200; g_draw_alpha = 255;
-        gfx_draw_string(10, 280, "Select a program:", 17);
+        gfx_draw_string(10, 285, "Select a program:", 17);
         
         /* Draw menu items */
-        int y = 250;
+        int y = 255;
         for (int i = scroll_offset; i < menu_count && i < scroll_offset + items_per_screen; i++) {
             if (i == selected) {
                 /* Highlight selected item */
@@ -165,17 +171,31 @@ int menu_select_program(void) {
             y -= 16;
         }
         
-        /* Draw instructions */
+        /* Draw instructions at bottom */
         g_draw_r = 150; g_draw_g = 150; g_draw_b = 150; g_draw_alpha = 255;
         gfx_draw_string(10, 30, "UP/DOWN: Select  ENTER: Load", 29);
         gfx_draw_string(10, 15, "E: Edit  ESC: Cancel", 20);
         
+        /* Draw build version in lower right corner */
+        char build_str[32];
+        snprintf(build_str, sizeof(build_str), "v%s b%d", BUILD_VERSION, BUILD_NUMBER);
+        int build_len = strlen(build_str);
+        /* Position in lower right: 320 - (len * 9) - 5px margin */
+        int build_x = 320 - (build_len * 9) - 5;
+        g_draw_r = 100; g_draw_g = 100; g_draw_b = 100; g_draw_alpha = 255;
+        gfx_draw_string(build_x, 15, build_str, build_len);
+        
         /* Present to screen */
         fb_present();
         
-        /* Wait for key */
+        /* Wait for key with network polling */
         kb_reset_events();
-        char key = kb_wait_key();
+        char key = 0;
+        while (!kb_key_available()) {
+            cyw43_arch_poll();  /* Poll network stack for incoming connections */
+            sleep_ms(10);
+        }
+        key = kb_get_char();
         
         /* Debug: print key code */
         DEBUG_PRINTF("Key pressed: 0x%02X ('%c')\n", (unsigned char)key, 

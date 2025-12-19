@@ -3,6 +3,7 @@
 #include "picocalc_framebuffer.h"
 #include "picocalc_keyboard.h"
 #include "picocalc_editor.h"
+#include "picocalc_wifi.h"
 #include "fat32.h"
 #include "debug.h"
 #include <string.h>
@@ -339,6 +340,9 @@ lua_State *lua_init_load81(void) {
     /* Register mkdir function */
     lua_pushcfunction(L, lua_mkdir);
     lua_setglobal(L, "mkdir");
+    
+    /* Register WiFi API */
+    wifi_register_lua(L);
     
     lua_error_flag = 0;
     lua_error_msg[0] = '\0';

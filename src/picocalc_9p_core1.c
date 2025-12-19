@@ -11,6 +11,7 @@
 
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
+#include "pico/cyw43_arch.h"
 #include "picocalc_9p.h"
 #include "picocalc_fat32_sync.h"
 #include "picocalc_mdns.h"
@@ -70,14 +71,17 @@ static void core1_entry(void) {
             DEBUG_PRINTF("[Core1] 9P server stopped\n");
         }
         
+        /* Poll lwIP network stack - CRITICAL for incoming connections! */
+        cyw43_arch_poll();
+        
         /* Poll server and mDNS */
         if (p9_server_is_running()) {
             p9_server_poll();
             mdns_poll();
         }
         
-        /* Small delay to prevent busy-waiting */
-        sleep_ms(10);
+        /* NO sleep_ms() here - we need maximum responsiveness for network events!
+         * cyw43_arch_poll() already includes appropriate internal delays */
     }
     
     /* Cleanup */

@@ -210,16 +210,19 @@ static err_t p9_tcp_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
 static err_t p9_tcp_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
     p9_client_t *client = (p9_client_t *)arg;
     
-    if (!p) {
-        /* Connection closed by client */
-        p9_client_close(client);
-        return ERR_OK;
-    }
-    
+    /* Check for errors first */
     if (err != ERR_OK) {
-        pbuf_free(p);
+        if (p) {
+            pbuf_free(p);
+        }
         p9_client_close(client);
         return err;
+    }
+    
+    /* p=NULL with err=ERR_OK means connection closed gracefully by remote */
+    if (!p) {
+        p9_client_close(client);
+        return ERR_OK;
     }
     
     /* Copy data to client buffer */
@@ -331,24 +334,43 @@ static void p9_client_close(p9_client_t *client) {
 static void p9_process_message(p9_client_t *client) {
     p9_msg_t req, resp;
     
-    /* Initialize request message from buffer */
+    /* Initialize request message from buffer - this reads the header */
     p9_msg_init_read(&req, client->rx_buffer, client->rx_len);
     
-    /* Read message header */
-    uint32_t size = p9_read_u32(&req);
-    uint8_t type = p9_read_u8(&req);
-    uint16_t tag = p9_read_u16(&req);
+    /* Use header values already read by p9_msg_init_read */
+    uint8_t type = req.type;
+    uint16_t tag = req.tag;
     
-    /* Initialize response message */
-    p9_msg_init_write(&resp, client->tx_buffer, P9_MAX_MSG_SIZE, 0, req.tag);
+    /* Check if message type is valid before writing response header */
+    bool valid_type = false;
+    switch (type) {
+        case Tversion:
+        case Tauth:
+        case Tattach:
+        case Twalk:
+        case Topen:
+        case Tcreate:
+        case Tread:
+        case Twrite:
+        case Tclunk:
+        case Tremove:
+        case Tstat:
+        case Twstat:
+        case Tflush:
+            valid_type = true;
+            break;
+        default:
+            /* Unknown message type - send error and return */
+            p9_send_error(client, tag, "unknown message type");
+            g_server.stats.messages_received++;
+            return;
+    }
     
-    /* Reserve space for size (will be filled later) */
-    p9_write_u32(&resp, 0);
+    /* Initialize response message with correct response type */
+    uint8_t resp_type = type + 1;  /* Response type = request type + 1 */
+    p9_msg_init_write(&resp, client->tx_buffer, P9_MAX_MSG_SIZE, resp_type, tag);
     
-    /* Write response type and tag */
-    p9_write_u8(&resp, type + 1);  /* Response type = request type + 1 */
-    p9_write_u16(&resp, tag);
-    
+    /* p9_msg_init_write reserves space for header - handlers write payload */
     /* Dispatch to appropriate handler */
     switch (type) {
         case Tversion:
@@ -390,10 +412,6 @@ static void p9_process_message(p9_client_t *client) {
         case Tflush:
             p9_handle_flush(client, &req, &resp);
             break;
-        default:
-            /* Unknown message type */
-            p9_send_error(client, tag, "unknown message type");
-            return;
     }
     
     /* Finalize response message (fills in size) */
@@ -417,7 +435,8 @@ static void p9_send_error(p9_client_t *client, uint16_t tag, const char *ename) 
     p9_msg_t resp;
     p9_msg_init_write(&resp, client->tx_buffer, P9_MAX_MSG_SIZE, Rerror, tag);
     
-    p9_write_u32(&resp, 0);  /* Size (filled later) */
+    /* p9_msg_init_write already reserved space for header (size, type, tag)
+     * Just write the error string - p9_msg_finalize will fill in the header */
     p9_write_string(&resp, ename);
     
     p9_msg_finalize(&resp);

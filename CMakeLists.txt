@@ -99,6 +99,7 @@ if(ENABLE_9P_SERVER)
         src/picocalc_fat32_sync.c
         src/picocalc_mdns.c
         src/picocalc_9p_core1.c
+        src/picocalc_debug_log.c
     )
     
     target_include_directories(picocalc_9p PUBLIC
@@ -131,6 +132,8 @@ add_executable(load81_picocalc
     src/picocalc_wifi.c
     src/picocalc_nex.c
     src/picocalc_repl.c
+    src/picocalc_diag_server.c
+    src/picocalc_debug_log.c
 )
 
 target_include_directories(load81_picocalc PRIVATE

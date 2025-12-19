@@ -9,6 +9,7 @@
 #include "picocalc_9p.h"
 #include "picocalc_9p_proto.h"
 #include "picocalc_fat32_sync.h"
+#include "picocalc_debug_log.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,6 +71,7 @@ void p9_handle_version(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     uint32_t msize = p9_read_u32(req);
     p9_string_t version_str;
     if (!p9_read_string(req, &version_str)) {
+        resp->type = Rerror;
         send_error(resp, "invalid version string");
         return;
     }
@@ -110,6 +112,7 @@ void p9_handle_auth(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     p9_read_string(req, &aname);
     
     /* We don't support authentication, return error */
+    resp->type = Rerror;
     send_error(resp, "authentication not required");
     
     p9_string_free(&uname);
@@ -124,9 +127,16 @@ void p9_handle_attach(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Read request */
     uint32_t fid = p9_read_u32(req);
     uint32_t afid = p9_read_u32(req);
-    p9_string_t uname, aname;
     
-    if (!p9_read_string(req, &uname) || !p9_read_string(req, &aname)) {
+    /* Use stack buffers instead of malloc - safer on embedded systems */
+    char uname_buf[256];
+    char aname_buf[256];
+    
+    uint16_t uname_len = p9_read_string_buf(req, uname_buf, sizeof(uname_buf));
+    uint16_t aname_len = p9_read_string_buf(req, aname_buf, sizeof(aname_buf));
+    
+    if (uname_len == 0 || aname_len == 0 || req->error) {
+        resp->type = Rerror;
         send_error(resp, "invalid attach parameters");
         return;
     }
@@ -134,9 +144,8 @@ void p9_handle_attach(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Allocate FID for root */
     p9_fid_t *root_fid = p9_fid_alloc(&client->fid_table, fid);
     if (!root_fid) {
+        resp->type = Rerror;
         send_error(resp, "fid already in use");
-        p9_string_free(&uname);
-        p9_string_free(&aname);
         return;
     }
     
@@ -147,13 +156,16 @@ void p9_handle_attach(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     root_fid->qid.version = 0;
     root_fid->qid.path = 1;  /* Root always has path 1 */
     
-    /* Write response */
-    p9_write_qid(resp, &root_fid->qid);
+    /* Write response - check for errors */
+    if (!p9_write_qid(resp, &root_fid->qid)) {
+        /* QID write failed - free the FID and return error */
+        p9_fid_free(&client->fid_table, fid);
+        resp->type = Rerror;
+        send_error(resp, "response buffer overflow");
+        return;
+    }
     
     client->state = P9_CLIENT_STATE_ATTACHED;
-    
-    p9_string_free(&uname);
-    p9_string_free(&aname);
 }
 
 /* ========================================================================
@@ -169,6 +181,7 @@ void p9_handle_walk(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Get source FID */
     p9_fid_t *src_fid = p9_fid_get(&client->fid_table, fid);
     if (!src_fid) {
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
@@ -177,6 +190,7 @@ void p9_handle_walk(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     if (nwname == 0) {
         p9_fid_t *new_fid = p9_fid_clone(&client->fid_table, fid, newfid);
         if (!new_fid) {
+            resp->type = Rerror;
             send_error(resp, "cannot clone fid");
             return;
         }
@@ -195,6 +209,7 @@ void p9_handle_walk(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
             for (int j = 0; j < i; j++) {
                 p9_string_free(&name_strs[j]);
             }
+            resp->type = Rerror;
             send_error(resp, "invalid path component");
             return;
         }
@@ -211,6 +226,7 @@ void p9_handle_walk(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     }
     
     if (walked < 0) {
+        resp->type = Rerror;
         send_error(resp, "walk failed");
         return;
     }
@@ -219,6 +235,7 @@ void p9_handle_walk(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     if (walked == nwname) {
         p9_fid_t *new_fid = p9_fid_clone(&client->fid_table, fid, newfid);
         if (!new_fid) {
+            resp->type = Rerror;
             send_error(resp, "cannot create new fid");
             return;
         }
@@ -259,6 +276,7 @@ void p9_handle_open(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Get FID */
     p9_fid_t *file_fid = p9_fid_get(&client->fid_table, fid);
     if (!file_fid) {
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
@@ -266,6 +284,7 @@ void p9_handle_open(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Open file */
     fat32_error_t err = p9_open_file(file_fid, mode);
     if (err != FAT32_OK) {
+        resp->type = Rerror;
         send_error(resp, fat32_error_to_string(err));
         return;
     }
@@ -287,6 +306,7 @@ void p9_handle_create(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     uint8_t mode = p9_read_u8(req);
     
     if (!p9_read_string(req, &name_str)) {
+        resp->type = Rerror;
         send_error(resp, "invalid name");
         return;
     }
@@ -297,12 +317,14 @@ void p9_handle_create(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     p9_fid_t *dir_fid = p9_fid_get(&client->fid_table, fid);
     if (!dir_fid) {
         p9_string_free(&name_str);
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
     
     if (dir_fid->type != P9_FID_TYPE_DIR) {
         p9_string_free(&name_str);
+        resp->type = Rerror;
         send_error(resp, "not a directory");
         return;
     }
@@ -312,6 +334,7 @@ void p9_handle_create(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     p9_string_free(&name_str);
     
     if (err != FAT32_OK) {
+        resp->type = Rerror;
         send_error(resp, fat32_error_to_string(err));
         return;
     }
@@ -339,11 +362,13 @@ void p9_handle_read(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Get FID */
     p9_fid_t *file_fid = p9_fid_get(&client->fid_table, fid);
     if (!file_fid) {
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
     
     if (!file_fid->file.is_open) {
+        resp->type = Rerror;
         send_error(resp, "file not open");
         return;
     }
@@ -357,6 +382,7 @@ void p9_handle_read(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Allocate temporary buffer for data */
     uint8_t *data_buffer = malloc(count);
     if (!data_buffer) {
+        resp->type = Rerror;
         send_error(resp, "out of memory");
         return;
     }
@@ -367,6 +393,7 @@ void p9_handle_read(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     
     if (err != FAT32_OK && err != FAT32_ERROR_INVALID_POSITION) {
         free(data_buffer);
+        resp->type = Rerror;
         send_error(resp, fat32_error_to_string(err));
         return;
     }
@@ -394,16 +421,19 @@ void p9_handle_write(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Get FID */
     p9_fid_t *file_fid = p9_fid_get(&client->fid_table, fid);
     if (!file_fid) {
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
     
     if (!file_fid->file.is_open) {
+        resp->type = Rerror;
         send_error(resp, "file not open");
         return;
     }
     
     if (file_fid->type == P9_FID_TYPE_DIR) {
+        resp->type = Rerror;
         send_error(resp, "cannot write to directory");
         return;
     }
@@ -416,6 +446,7 @@ void p9_handle_write(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     fat32_error_t err = p9_write_file(file_fid, offset, count, data, &bytes_written);
     
     if (err != FAT32_OK) {
+        resp->type = Rerror;
         send_error(resp, fat32_error_to_string(err));
         return;
     }
@@ -449,6 +480,7 @@ void p9_handle_remove(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Get FID */
     p9_fid_t *file_fid = p9_fid_get(&client->fid_table, fid);
     if (!file_fid) {
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
@@ -460,6 +492,7 @@ void p9_handle_remove(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     p9_fid_free(&client->fid_table, fid);
     
     if (err != FAT32_OK) {
+        resp->type = Rerror;
         send_error(resp, fat32_error_to_string(err));
         return;
     }
@@ -478,6 +511,7 @@ void p9_handle_stat(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     /* Get FID */
     p9_fid_t *file_fid = p9_fid_get(&client->fid_table, fid);
     if (!file_fid) {
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
@@ -487,6 +521,7 @@ void p9_handle_stat(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     fat32_error_t err = p9_stat_file(file_fid->path, &stat, &client->fid_table);
     
     if (err != FAT32_OK) {
+        resp->type = Rerror;
         send_error(resp, fat32_error_to_string(err));
         return;
     }
@@ -511,6 +546,7 @@ void p9_handle_wstat(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     
     p9_stat_t stat;
     if (!p9_read_stat(req, &stat)) {
+        resp->type = Rerror;
         send_error(resp, "invalid stat structure");
         return;
     }
@@ -519,6 +555,7 @@ void p9_handle_wstat(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
     p9_fid_t *file_fid = p9_fid_get(&client->fid_table, fid);
     if (!file_fid) {
         p9_stat_free(&stat);
+        resp->type = Rerror;
         send_error(resp, "unknown fid");
         return;
     }
@@ -542,6 +579,7 @@ void p9_handle_wstat(p9_client_t *client, p9_msg_t *req, p9_msg_t *resp) {
         fat32_error_t err = fat32_sync_rename(file_fid->path, new_path);
         if (err != FAT32_OK) {
             p9_stat_free(&stat);
+            resp->type = Rerror;
             send_error(resp, fat32_error_to_string(err));
             return;
         }

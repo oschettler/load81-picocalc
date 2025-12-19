@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "pico/stdlib.h"
+#include "pico/cyw43_arch.h"
 #include "hardware/gpio.h"
 
 /* Debug output support */
@@ -27,6 +28,7 @@
 #include "picocalc_wifi.h"
 #include "picocalc_nex.h"
 #include "picocalc_repl.h"
+#include "picocalc_debug_log.h"
 
 #ifdef ENABLE_9P_SERVER
 /* 9P Server Core 1 functions */
@@ -51,6 +53,10 @@ void user_interrupt(void) {
 static bool init_hardware(void) {
     /* Initialize Pico stdlib (only for debug output) */
     DEBUG_INIT();
+    
+    /* Initialize debug log system */
+    debug_log_init();
+    debug_log("=== PicoCalc Boot ===");
     
     /* Initialize southbridge (power, keyboard interface) */
     sb_init();
@@ -240,6 +246,9 @@ static void program_loop(lua_State *L) {
     /* Main loop */
     while (g_program_running) {
         uint32_t frame_start = to_ms_since_boot(get_absolute_time());
+        
+        /* Poll network stack for incoming connections */
+        cyw43_arch_poll();
         
         /* Poll keyboard */
         kb_poll();
