@@ -11,6 +11,12 @@ import subprocess
 from typing import Optional
 from client import Load81Client
 
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
 
 def cmd_cat(client: Load81Client, *files) -> int:
     """Display file contents"""
@@ -196,6 +202,7 @@ def cmd_help(client: Load81Client, command: Optional[str] = None) -> int:
             'repl': 'repl\n  Enter interactive Lua REPL',
             'rm': 'rm PATH [PATH...]\n  Delete files or directories',
             'rsync': 'rsync SOURCE DEST\n  Synchronize directories\n  Remote paths must start with /\n  Examples:\n    rsync /load81 ./backup  (download from remote)\n    rsync ./backup /load81  (upload to remote)',
+            'sshot': 'sshot FILENAME\n  Capture screenshot from PicoCalc display and save as PNG\n  Requires PIL/Pillow: pip install pillow',
         }
         
         if command in help_text:
@@ -218,6 +225,7 @@ def cmd_help(client: Load81Client, command: Optional[str] = None) -> int:
         print("  repl              Interactive Lua REPL")
         print("  rm PATH...        Delete files/directories")
         print("  rsync SRC DST     Synchronize directories")
+        print("  sshot FILE        Capture screenshot to PNG")
         print()
         print("  exit, quit        Exit shell")
         print()
@@ -320,6 +328,67 @@ def cmd_rm(client: Load81Client, *paths) -> int:
             exit_code = 1
     
     return exit_code
+
+
+def cmd_sshot(client: Load81Client, filename: str) -> int:
+    """Capture screenshot from PicoCalc display"""
+    if not filename:
+        print("Error: Missing filename", file=sys.stderr)
+        print("Usage: sshot FILENAME", file=sys.stderr)
+        return 1
+    
+    if not PIL_AVAILABLE:
+        print("Error: PIL/Pillow not installed", file=sys.stderr)
+        print("Install with: pip install pillow", file=sys.stderr)
+        return 1
+    
+    # Get screenshot data from device
+    print(f"Capturing screenshot...")
+    data = client.sshot()
+    if data is None:
+        error_msg = client.last_error if client.last_error else "Cannot capture screenshot"
+        print(f"Error: {error_msg}", file=sys.stderr)
+        return 1
+    
+    # Verify data size (320x320 pixels * 2 bytes per pixel = 204800 bytes)
+    expected_size = 320 * 320 * 2
+    if len(data) != expected_size:
+        print(f"Error: Invalid screenshot data size (got {len(data)}, expected {expected_size})", file=sys.stderr)
+        return 1
+    
+    print(f"Converting RGB565 to PNG...")
+    
+    # Convert RGB565 to RGB888
+    pixels = bytearray(320 * 320 * 3)  # RGB888 format
+    for i in range(0, len(data), 2):
+        # Read RGB565 value (little-endian)
+        rgb565 = data[i] | (data[i+1] << 8)
+        
+        # Extract RGB components
+        r5 = (rgb565 >> 11) & 0x1F
+        g6 = (rgb565 >> 5) & 0x3F
+        b5 = rgb565 & 0x1F
+        
+        # Convert to 8-bit values
+        r8 = (r5 * 255 + 15) // 31
+        g8 = (g6 * 255 + 31) // 63
+        b8 = (b5 * 255 + 15) // 31
+        
+        # Write to RGB888 buffer
+        pixel_idx = (i // 2) * 3
+        pixels[pixel_idx] = r8
+        pixels[pixel_idx + 1] = g8
+        pixels[pixel_idx + 2] = b8
+    
+    # Create and save PNG
+    try:
+        img = Image.frombytes('RGB', (320, 320), bytes(pixels))
+        img.save(filename, 'PNG')
+        print(f"Screenshot saved to {filename}")
+        return 0
+    except Exception as e:
+        print(f"Error: Cannot save PNG: {e}", file=sys.stderr)
+        return 1
 
 
 def cmd_rsync(client: Load81Client, src: str, dst: str) -> int:

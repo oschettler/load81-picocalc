@@ -407,11 +407,20 @@ static int editorOpen(char *filename) {
     DEBUG_PRINTF("[Editor] Attempting to open file: '%s'\n", filename);
     result = fat32_open(&file, filename);
     if (result != FAT32_OK) {
-        /* No such file, add a template */
-        DEBUG_PRINTF("[Editor] File not found (error: %s), using template\n", fat32_error_string(result));
-        int j = 0;
-        while(editorTemplate[j])
-            editorInsertRow(E.numrows, editorTemplate[j++]);
+        /* No such file - check if it's a .lua file */
+        size_t len = strlen(filename);
+        int is_lua = (len >= 4 && strcmp(filename + len - 4, ".lua") == 0);
+        
+        if (is_lua) {
+            /* Add template for .lua files */
+            DEBUG_PRINTF("[Editor] File not found (error: %s), using template for .lua file\n", fat32_error_string(result));
+            int j = 0;
+            while(editorTemplate[j])
+                editorInsertRow(E.numrows, editorTemplate[j++]);
+        } else {
+            /* Start with empty editor for non-.lua files */
+            DEBUG_PRINTF("[Editor] File not found (error: %s), starting with empty editor\n", fat32_error_string(result));
+        }
         return 1;
     }
     
@@ -424,9 +433,6 @@ static int editorOpen(char *filename) {
     if (file_size > 65536) {
         DEBUG_PRINTF("[Editor] File too large\n");
         fat32_close(&file);
-        int j = 0;
-        while(editorTemplate[j])
-            editorInsertRow(E.numrows, editorTemplate[j++]);
         return 1;
     }
     
@@ -435,9 +441,6 @@ static int editorOpen(char *filename) {
     if (!buffer) {
         DEBUG_PRINTF("[Editor] Failed to allocate memory\n");
         fat32_close(&file);
-        int j = 0;
-        while(editorTemplate[j])
-            editorInsertRow(E.numrows, editorTemplate[j++]);
         return 1;
     }
     
@@ -448,9 +451,6 @@ static int editorOpen(char *filename) {
         DEBUG_PRINTF("[Editor] Error reading file: %s\n", fat32_error_string(result));
         free(buffer);
         fat32_close(&file);
-        int j = 0;
-        while(editorTemplate[j])
-            editorInsertRow(E.numrows, editorTemplate[j++]);
         return 1;
     }
     
@@ -484,12 +484,115 @@ static int editorOpen(char *filename) {
     return 0;
 }
 
+/* Ensure parent directories exist for a file path */
+static int ensure_parent_directories(const char *filepath) {
+    /* Skip leading slash if present */
+    const char *path = filepath;
+    if (path[0] == '/') {
+        path++;
+    }
+    
+    /* Find the last slash to separate directory from filename */
+    const char *last_slash = strrchr(path, '/');
+    if (!last_slash) {
+        /* No directory component, file is in root */
+        return 0;
+    }
+    
+    /* Extract directory path */
+    size_t dir_len = last_slash - path;
+    if (dir_len == 0) {
+        /* File is directly in root directory */
+        return 0;
+    }
+    
+    char dir_path[256];
+    if (dir_len >= sizeof(dir_path)) {
+        DEBUG_PRINTF("[Editor] Directory path too long\n");
+        return 1;
+    }
+    
+    /* Copy directory path (without leading slash) */
+    memcpy(dir_path, path, dir_len);
+    dir_path[dir_len] = '\0';
+    
+    /* Build path incrementally, creating each directory level */
+    char current_path[256] = "/";
+    char *token = strtok(dir_path, "/");
+    
+    while (token != NULL) {
+        /* Append next directory component */
+        if (strlen(current_path) > 1) {
+            strncat(current_path, "/", sizeof(current_path) - strlen(current_path) - 1);
+        }
+        strncat(current_path, token, sizeof(current_path) - strlen(current_path) - 1);
+        
+        /* Try to open the directory to see if it exists */
+        fat32_file_t test_dir;
+        fat32_error_t result = fat32_open(&test_dir, current_path);
+        
+        if (result == FAT32_OK) {
+            /* Directory exists, close it and continue */
+            fat32_close(&test_dir);
+        } else if (result == FAT32_ERROR_FILE_NOT_FOUND || result == FAT32_ERROR_DIR_NOT_FOUND) {
+            /* Directory doesn't exist, create it */
+            fat32_file_t parent_dir;
+            
+            /* Find parent path */
+            char parent_path[256];
+            strncpy(parent_path, current_path, sizeof(parent_path) - 1);
+            parent_path[sizeof(parent_path) - 1] = '\0';
+            char *last_slash_in_current = strrchr(parent_path, '/');
+            if (last_slash_in_current && last_slash_in_current != parent_path) {
+                *last_slash_in_current = '\0';
+            } else {
+                strcpy(parent_path, "/");
+            }
+            
+            /* Open parent directory */
+            result = fat32_open(&parent_dir, parent_path);
+            if (result != FAT32_OK) {
+                DEBUG_PRINTF("[Editor] Failed to open parent directory %s: %s\n",
+                           parent_path, fat32_error_string(result));
+                return 1;
+            }
+            
+            /* Create the directory */
+            DEBUG_PRINTF("[Editor] Creating directory: %s\n", current_path);
+            result = fat32_dir_create(&parent_dir, current_path);
+            fat32_close(&parent_dir);
+            
+            if (result != FAT32_OK) {
+                DEBUG_PRINTF("[Editor] Failed to create directory %s: %s\n",
+                           current_path, fat32_error_string(result));
+                return 1;
+            }
+        } else {
+            /* Some other error occurred */
+            DEBUG_PRINTF("[Editor] Error checking directory %s: %s\n",
+                       current_path, fat32_error_string(result));
+            return 1;
+        }
+        
+        token = strtok(NULL, "/");
+    }
+    
+    return 0;
+}
+
 /* Save file */
 static int editorSave(char *filename) {
     int len;
     char *buf = editorRowsToString(&len);
     fat32_file_t file;
     fat32_error_t result;
+
+    /* Ensure parent directories exist */
+    if (ensure_parent_directories(filename) != 0) {
+        DEBUG_PRINTF("[Editor] Failed to create parent directories for: %s\n", filename);
+        free(buf);
+        return 1;
+    }
 
     /* Try to open existing file */
     result = fat32_open(&file, filename);

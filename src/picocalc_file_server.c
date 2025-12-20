@@ -2,6 +2,7 @@
 #include "picocalc_fs_handler.h"
 #include "picocalc_repl_handler.h"
 #include "picocalc_debug_log.h"
+#include "picocalc_framebuffer.h"
 #include "debug.h"
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
@@ -55,6 +56,7 @@ static void cmd_mkdir(file_client_t *client, const char *args);
 static void cmd_rm(file_client_t *client, const char *args);
 static void cmd_stat(file_client_t *client, const char *args);
 static void cmd_repl(file_client_t *client, const char *args);
+static void cmd_sshot(file_client_t *client, const char *args);
 static void cmd_ping(file_client_t *client, const char *args);
 static void cmd_quit(file_client_t *client, const char *args);
 
@@ -77,6 +79,7 @@ static const command_entry_t commands[] = {
     {"RM", cmd_rm},
     {"STAT", cmd_stat},
     {"REPL", cmd_repl},
+    {"SSHOT", cmd_sshot},
     {"PING", cmd_ping},
     {"QUIT", cmd_quit},
     {NULL, NULL}
@@ -577,6 +580,73 @@ static void cmd_repl(file_client_t *client, const char *args) {
     /* Send output */
     send_ok(client, output);
     free(output);
+}
+
+static void cmd_sshot(file_client_t *client, const char *args) {
+    DEBUG_PRINTF("[FILE_SERVER] SSHOT command\n");
+    
+    /* Calculate framebuffer size: 320x320 pixels * 2 bytes per pixel (RGB565) */
+    const size_t fb_size = FB_WIDTH * FB_HEIGHT * 2;
+    
+    DEBUG_PRINTF("[FILE_SERVER] SSHOT: Framebuffer size=%lu bytes\n", (unsigned long)fb_size);
+    
+    /* Send +DATA header with size */
+    char header[64];
+    snprintf(header, sizeof(header), "+DATA %zu\n", fb_size);
+    DEBUG_PRINTF("[FILE_SERVER] SSHOT: Sending header: %s", header);
+    send_response(client, header);
+    
+    /* Stream framebuffer data in chunks */
+    const uint8_t *fb_data = (const uint8_t *)g_fb.pixels;
+    size_t total_sent = 0;
+    
+    while (total_sent < fb_size) {
+        size_t to_send = fb_size - total_sent;
+        if (to_send > 1024) {  /* 1KB chunks */
+            to_send = 1024;
+        }
+        
+        /* Wait for TCP send buffer space */
+        u16_t available = tcp_sndbuf(client->pcb);
+        while (available < to_send && client->pcb) {
+            tcp_output(client->pcb);
+            cyw43_arch_poll();
+            sleep_ms(1);
+            available = tcp_sndbuf(client->pcb);
+        }
+        
+        if (!client->pcb) {
+            DEBUG_PRINTF("[FILE_SERVER] SSHOT: Connection lost\n");
+            return;
+        }
+        
+        /* Send chunk */
+        err_t tcp_err = tcp_write(client->pcb, fb_data + total_sent, to_send, TCP_WRITE_FLAG_COPY);
+        if (tcp_err != ERR_OK) {
+            DEBUG_PRINTF("[FILE_SERVER] SSHOT: tcp_write error %d at offset %lu\n",
+                        tcp_err, (unsigned long)total_sent);
+            return;
+        }
+        
+        total_sent += to_send;
+        
+        /* Flush every 4KB */
+        if (total_sent % 4096 == 0) {
+            tcp_output(client->pcb);
+        }
+        
+        DEBUG_PRINTF("[FILE_SERVER] SSHOT: Sent %lu/%lu bytes\n",
+                    (unsigned long)total_sent, (unsigned long)fb_size);
+    }
+    
+    /* Final flush */
+    tcp_output(client->pcb);
+    
+    DEBUG_PRINTF("[FILE_SERVER] SSHOT: Streaming complete, sent %lu bytes\n", (unsigned long)total_sent);
+    
+    /* Send +END marker */
+    send_response(client, "+END\n");
+    DEBUG_PRINTF("[FILE_SERVER] SSHOT: Command complete\n");
 }
 
 static void cmd_ping(file_client_t *client, const char *args) {

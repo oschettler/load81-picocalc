@@ -10,7 +10,7 @@ from client import Load81Client
 from shell import run_shell
 from commands import (
     cmd_cat, cmd_cd, cmd_cp, cmd_edit, cmd_help,
-    cmd_ls, cmd_mkdir, cmd_repl, cmd_rm, cmd_rsync
+    cmd_ls, cmd_mkdir, cmd_repl, cmd_rm, cmd_rsync, cmd_sshot
 )
 
 
@@ -28,6 +28,7 @@ Examples:
   %(prog)s 192.168.1.100 cp ./local.txt remote:/file.txt  # Upload
   %(prog)s 192.168.1.100 rsync /load81 ./backup  # Download directory
   %(prog)s 192.168.1.100 rsync ./backup /load81  # Upload directory
+  %(prog)s 192.168.1.100 sshot screenshot.png  # Capture screenshot
         """
     )
     
@@ -115,6 +116,12 @@ Examples:
                 print("Usage: rsync SOURCE DEST", file=sys.stderr)
                 return 1
             return cmd_rsync(client, cmd_args[0], cmd_args[1])
+        
+        elif cmd == 'sshot':
+            if not cmd_args:
+                print("Error: Missing filename", file=sys.stderr)
+                return 1
+            return cmd_sshot(client, cmd_args[0])
         
         else:
             print(f"Unknown command: {cmd}", file=sys.stderr)

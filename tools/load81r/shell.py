@@ -12,7 +12,7 @@ from typing import Optional
 from client import Load81Client
 from commands import (
     cmd_cat, cmd_cd, cmd_cp, cmd_edit, cmd_help,
-    cmd_ls, cmd_mkdir, cmd_repl, cmd_rm, cmd_rsync
+    cmd_ls, cmd_mkdir, cmd_repl, cmd_rm, cmd_rsync, cmd_sshot
 )
 
 
@@ -56,8 +56,8 @@ class Load81Shell:
         
         # Complete command names
         if not tokens or (len(tokens) == 1 and not line.endswith(' ')):
-            commands = ['cat', 'cd', 'cp', 'edit', 'help', 'ls', 
-                       'mkdir', 'repl', 'rm', 'rsync', 'exit', 'quit']
+            commands = ['cat', 'cd', 'cp', 'edit', 'help', 'ls',
+                       'mkdir', 'repl', 'rm', 'rsync', 'sshot', 'exit', 'quit']
             matches = [cmd for cmd in commands if cmd.startswith(text)]
             return matches[state] if state < len(matches) else None
         
@@ -189,6 +189,12 @@ class Load81Shell:
                     print("Usage: rsync SOURCE DEST", file=sys.stderr)
                     return 1
                 return cmd_rsync(self.client, args[0], args[1])
+            
+            elif cmd == 'sshot':
+                if not args:
+                    print("Error: Missing filename", file=sys.stderr)
+                    return 1
+                return cmd_sshot(self.client, args[0])
             
             else:
                 print(f"Unknown command: {cmd}", file=sys.stderr)

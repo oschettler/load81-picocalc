@@ -308,6 +308,16 @@ class Load81Client:
         response = self.send_command("PING")
         return response.success
     
+    def sshot(self) -> Optional[bytes]:
+        """Capture screenshot from PicoCalc display (320x320 RGB565)"""
+        response = self.send_command("SSHOT")
+        if response.success and response.binary:
+            return response.binary
+        # Store last error for debugging
+        if response.error:
+            self.last_error = response.error
+        return None
+    
     def __enter__(self):
         """Context manager entry"""
         return self

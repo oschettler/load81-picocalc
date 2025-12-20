@@ -61,25 +61,13 @@ function save_date_string(date)
     end
 end
 
--- Ensure directory exists
-function ensure_dir(path)
-    local success, err = mkdir(path)
-    if not success and err then
-        print("mkdir " .. path .. ": " .. err)
-    end
-end
-
 -- Main function: open today's journal
 function open_journal()
     local date = get_date_string()
     local year, month = date:match("(%d+)-(%d+)")
     
-    -- Create directory structure: /journal/YYYY/MM/
-    ensure_dir("journal")
-    ensure_dir("journal/" .. year)
-    ensure_dir("journal/" .. year .. "/" .. month)
-    
     -- Build file path: /journal/YYYY/MM/YYYY-MM-DD.txt
+    -- The edit() function will automatically create intermediate directories
     local journal_file = string.format("/journal/%s/%s/%s.txt", year, month, date)
     
     print("Opening: " .. journal_file)
