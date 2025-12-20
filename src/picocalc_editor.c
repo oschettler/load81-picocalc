@@ -6,6 +6,7 @@
 #include "keyboard.h"
 #include "fat32.h"
 #include "pico/stdlib.h"
+#include "pico/cyw43_arch.h"
 #include "debug.h"
 #include <stdlib.h>
 #include <string.h>
@@ -793,6 +794,9 @@ static keyState *editorGetKeyState(char key) {
 
 /* Main event loop - returns 1 to exit, 0 to continue */
 static int editorEvents(void) {
+    /* Poll network stack to keep WiFi/fileserver responsive */
+    cyw43_arch_poll();
+    
     /* Poll keyboard */
     kb_poll();
     
@@ -831,8 +835,8 @@ static int editorEvents(void) {
     /* Draw editor */
     editorDraw();
     
-    /* Small delay */
-    sleep_ms(33); /* ~30 FPS */
+    /* Small delay - reduced to allow network operations to proceed */
+    sleep_ms(10); /* Faster polling for better network responsiveness */
     
     return 0;
 }
